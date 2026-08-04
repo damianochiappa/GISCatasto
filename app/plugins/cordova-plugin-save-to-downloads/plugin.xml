@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plugin id="cordova-plugin-save-to-downloads" version="1.0.0"
+    xmlns="http://apache.org/cordova/ns/plugins/1.0"
+    xmlns:android="http://schemas.android.com/apk/res/android">
+  <name>SaveToDownloads</name>
+  <js-module src="www/SaveToDownloads.js" name="SaveToDownloads">
+    <clobbers target="SaveToDownloads" />
+  </js-module>
+  <platform name="android">
+    <source-file src="src/android/SaveToDownloads.java"
+        target-dir="app/src/main/java/com/geotool/app" />
+    <config-file target="res/xml/config.xml" parent="/*">
+      <feature name="SaveToDownloads">
+        <param name="android-package" value="com.geotool.app.SaveToDownloads"/>
+      </feature>
+    </config-file>
+  </platform>
+</plugin>

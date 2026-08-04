@@ -1,0 +1,73 @@
+GISCatasto — Third-Party Notices
+================================
+This project is licensed under GPL v3 (see LICENSE).
+The following third-party libraries are included under their respective licenses.
+
+leaflet.js
+  License: BSD-2-Clause
+  Copyright (c) 2010-2026, Volodymyr Agafonkin; 2010-2011, CloudMade
+
+leaflet-rotate (Raruto)
+  License: GPL-3.0
+  https://github.com/Raruto/leaflet-rotate
+
+Leaflet.draw
+  License: MIT
+  https://github.com/Leaflet/Leaflet.draw
+
+Leaflet.PolylineMeasure
+  License: BSD-2-Clause
+  https://github.com/ppete2/Leaflet.PolylineMeasure
+
+OpenLayers (ol.js)
+  License: BSD-2-Clause
+  Copyright 2005-present, OpenLayers Contributors
+
+esri-leaflet
+  License: Apache-2.0
+  Copyright 2013 Esri
+
+proj4.js
+  License: MIT
+  https://github.com/proj4js/proj4js
+
+JSZip
+  License: MIT or GPL-3.0 (dual license, used here under MIT)
+  https://github.com/Stuk/jszip
+
+L.KML
+  License: MIT
+  Copyright (c) 2011-2015, Pavel Shramov, Bruno Bergot
+
+togeojson
+  License: BSD-2-Clause
+  Copyright (c) 2016 Mapbox
+
+leaflet.filelayer
+  License: MIT
+  Copyright (c) 2012 Makina Corpus
+
+mgrs.js
+  License: MIT
+  Copyright (c) 2022 Placemark
+
+tokml
+  License: MIT
+  https://github.com/tmcw/tokml
+
+turf.js
+  License: MIT
+  https://github.com/Turfjs/turf
+
+utm.js / utmref.js
+  Author: Johannes Rudolph <johannes.rudolph@gmx.com>
+  License: not explicitly declared; contains MIT/LGPL-licensed fragments (cited inline)
+
+OSRM routing (runtime API, no local library)
+  License: BSD-2-Clause (public server — project-osrm.org, routing.openstreetmap.de)
+
+Default tile providers (public distribution)
+  - Satellite Hybrid layer ("google_hybrid" key): Stadia Maps "alidade_satellite" (BSD-2-Clause attribution)
+  - Street Map layer  ("google_maps"  key): CartoDB Voyager (free for non-commercial use, attribution required)
+  Note: the keys "google_*" are historical names; the public build does NOT use Google Maps tiles.
+  Users can override these via the optional, git-excluded app/js/basemaps-private.js file.

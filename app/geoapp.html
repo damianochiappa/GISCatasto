@@ -1,0 +1,1501 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1117">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>GISCatasto</title>
+  <!-- Event recorder for the Help > diagnostic report. Loaded first, before any
+       other script, so failures during boot are captured too. Costs one array of
+       at most NV_LOG_MAX short strings; nothing is written to disk unless the
+       user asks for the report. -->
+  <script>
+  (function nvLogInit() {
+    const NV_LOG_MAX = 300;
+    const buf = [];
+    const t0 = Date.now();
+    function stamp() {
+      const s = Math.round((Date.now() - t0) / 1000);
+      return '+' + String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+    }
+    function push(level, parts) {
+      let msg;
+      try {
+        msg = parts.map(p => {
+          if (p instanceof Error) return p.name + ': ' + p.message;
+          if (typeof p === 'object' && p !== null) { try { return JSON.stringify(p).slice(0, 200); } catch (_) { return '[object]'; } }
+          return String(p);
+        }).join(' ');
+      } catch (_) { msg = '[unformattable]'; }
+      buf.push(stamp() + '  ' + level + '  ' + msg.slice(0, 400));
+      if (buf.length > NV_LOG_MAX) buf.shift();
+    }
+    window.nvLog = (...a) => push('INFO ', a);
+    window.nvLogLines = () => buf.slice();
+    window.nvLogSince = () => t0;
+
+    ['warn', 'error'].forEach(lvl => {
+      const orig = console[lvl] ? console[lvl].bind(console) : function () {};
+      console[lvl] = function (...a) { push(lvl === 'warn' ? 'WARN ' : 'ERROR', a); orig(...a); };
+    });
+    window.addEventListener('error', e => {
+      push('ERROR', [(e.message || 'script error'), '@', (e.filename || '?').split('/').pop() + ':' + (e.lineno || 0)]);
+    });
+    window.addEventListener('unhandledrejection', e => {
+      const r = e && e.reason;
+      push('ERROR', ['unhandled rejection:', r && r.message ? r.message : r]);
+    });
+  })();
+  </script>
+  <!-- Whether the system bar insets are ours to pad for. The meta viewport above carries
+       viewport-fit=cover, so env(safe-area-inset-*) reports the bars on every Android —
+       but only Android 15 forces edge-to-edge for apps targeting SDK 35+. Below it the
+       system has already shrunk the WebView to sit between the bars, so padding for them
+       again reserved the same ~100 CSS px twice: that was the dark band above the toolbar
+       and below the coordinate readout. Runs before first paint to avoid a reflow.
+       Unknown user agents keep the insets: over-padding is cosmetic, while dropping a
+       real inset would slide the toolbar under the status bar. -->
+  <script>
+  (function nvEdgeToEdge() {
+    var m = /Android (\d+)/.exec(navigator.userAgent);
+    if (m && parseInt(m[1], 10) < 15) {
+      document.documentElement.classList.add('no-edge-to-edge');
+    }
+  })();
+  </script>
+  <link rel="manifest" href="manifest.json">
+  <meta name="apple-mobile-web-app-title" content="GISCatasto">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <!-- Leaflet core -->
+  <link rel="stylesheet" href="lib/leaflet.css">
+  <!-- Leaflet Draw -->
+  <link rel="stylesheet" href="lib/leaflet-draw/leaflet.draw.css">
+  <!-- Polyline Measure -->
+  <link rel="stylesheet" href="lib/Leaflet.PolylineMeasure.css">
+  <!-- OpenLayers — WFS GML parser (ol.format.WFS / GML32) -->
+  <link rel="stylesheet" href="lib/ol.css">
+  <!-- App styles -->
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<!-- ===== SPLASH ===== -->
+<div id="splash">
+  <div id="splash-icon">
+    <!-- Same artwork as the launcher icon: one source of truth, so the splash can never
+         drift from what the user tapped. -->
+    <img src="images/icon-512.png" alt="" width="160" height="160">
+  </div>
+  <div class="splash-name">GISCatasto</div>
+  <div class="splash-sub">GIS pensato per il lavoro sul campo</div>
+  <div class="splash-bar-wrap"><div class="splash-bar"></div></div>
+</div>
+
+<!-- ===== ONBOARDING ===== -->
+<div id="onboarding" class="hidden">
+  <div id="ob-track">
+
+    <div class="ob-slide">
+      <!-- The app mark itself, same file as the splash and the About header, so the three
+           cannot drift apart. app-mark drops the tile behind it: icon-512 already carries its
+           own squircle plaque and would otherwise read as a shape inside a shape. -->
+      <div class="ob-icon app-mark">
+        <img src="images/icon-512.png" alt="">
+      </div>
+      <h2 class="ob-title">Benvenuto in GISCatasto</h2>
+      <!-- "Nessun dato raccolto" was not true and contradicted the Data Safety declaration:
+           the requests to the map, geocoding and routing services carry the coordinates off
+           the device. What is true — and just as reassuring — is that none of it reaches us. -->
+      <p class="ob-text">Consultazione catastale e cartografia sul campo. La consultazione del catasto richiede connessione; le mappe che hai scaricato restano disponibili anche senza. Nessun account e nessun dato raccolto da noi: l'app non ha un server. Le mappe e le ricerche passano dai servizi pubblici che scegli.</p>
+    </div>
+
+    <div class="ob-slide">
+      <div class="ob-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 10 H26 V26 H6 Z" stroke="var(--accent)"/><path d="M26 10 H42 V20 H26 Z" stroke="var(--accent)"/><path d="M26 20 H42 V26 H26 Z" stroke="var(--accent)"/><path d="M6 26 H18 V42 H6 Z" stroke="var(--accent)"/><path d="M30 26 H42 V42 H30 Z" stroke="var(--accent)"/><path d="M18 26 H30 V42 H18 Z" fill="rgba(242,163,60,.85)" stroke="#f2a33c"/></svg>
+      </div>
+      <h2 class="ob-title">Catasto</h2>
+      <p class="ob-text">Scegli comune, foglio e particella: l'app ti porta sull'area e la evidenzia. I confini arrivano dai servizi pubblici dell'Agenzia delle Entrate: servono a riconoscere una particella, non a definirne i confini di proprietà, e conservano l'imprecisione propria della cartografia catastale.</p>
+    </div>
+
+    <div class="ob-slide">
+      <div class="ob-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="30" width="36" height="8" rx="2" stroke="var(--accent)"/><rect x="6" y="20" width="36" height="8" rx="2" stroke="#6c5ce7"/><rect x="6" y="10" width="36" height="8" rx="2" stroke="var(--accent-h)"/></svg>
+      </div>
+      <h2 class="ob-title">Mappe e livelli</h2>
+      <p class="ob-text">Aggiungi mappe di sfondo (WMS, WMTS, ArcGIS) e livelli vettoriali (WFS, KML, GeoJSON). Regola opacità, colore e riempimento di ciascuno, e riordinali trascinandoli nella legenda.</p>
+    </div>
+
+    <div class="ob-slide">
+      <div class="ob-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 20 A10 10 0 1 1 34 20 A8 8 0 0 1 34 36 H14 A8 8 0 0 1 14 20 Z" stroke="var(--accent)"/><line x1="24" y1="24" x2="24" y2="40" stroke="var(--accent-h)" stroke-width="3" stroke-linecap="round"/><polyline points="18,34 24,40 30,34" stroke="var(--accent-h)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <h2 class="ob-title">Cartografia offline</h2>
+      <p class="ob-text">Delimita l'area che ti serve disegnando un rettangolo sulla mappa e salvandolo come KML (o usa un KML che hai gi&agrave;), poi scaricala prima di partire. Sul posto restano le mappe salvate, non l'interrogazione catastale.</p>
+    </div>
+
+    <div class="ob-slide">
+      <div class="ob-icon">
+        <!-- Compass and ruler: the previous figure (head + body) read as a dumbbell at 52px. -->
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="18" r="12" stroke="var(--accent)"/><polygon points="18,9 21,18 18,27 15,18" stroke="var(--accent)" stroke-linejoin="round"/><g transform="rotate(-45 33 33)" stroke="var(--accent-h)"><rect x="21" y="29" width="26" height="9" rx="2"/><line x1="27" y1="29" x2="27" y2="34"/><line x1="33" y1="29" x2="33" y2="34"/><line x1="39" y1="29" x2="39" y2="34"/></g></svg>
+      </div>
+      <h2 class="ob-title">Posizione e misure</h2>
+      <p class="ob-text">Segui la tua posizione in tempo reale, registra tracce, misura distanze e aree, converti coordinate tra i sistemi di riferimento.</p>
+    </div>
+
+    <div class="ob-slide">
+      <div class="ob-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><circle cx="24" cy="24" r="20" stroke="var(--success)"/><polyline points="14,24 21,31 34,17" stroke="var(--success)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <h2 class="ob-title">Tutto pronto</h2>
+      <p class="ob-text">Tocca la scheda <strong>?</strong> nel pannello laterale per aprire la guida completa, con tutte le funzioni spiegate in dettaglio.</p>
+      <button id="ob-guide-btn">Apri la guida</button>
+    </div>
+
+  </div>
+
+  <div id="ob-dots">
+    <span class="ob-dot active"></span>
+    <span class="ob-dot"></span>
+    <span class="ob-dot"></span>
+    <span class="ob-dot"></span>
+    <span class="ob-dot"></span>
+    <span class="ob-dot"></span>
+  </div>
+
+  <button id="ob-skip">Salta</button>
+  <button id="ob-next">Avanti ›</button>
+</div>
+
+<!-- ===== APP ===== -->
+<div id="app">
+
+  <!-- TOP BAR -->
+  <header id="topbar">
+    <button id="sidebar-toggle" title="Apri/chiudi il pannello">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+    </button>
+
+    <div class="brand">
+      <!-- Layer stack, echoing the launcher icon. It replaced a navigation reticle that
+           was inherited from the upstream project and did not fit this one. -->
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linejoin="round" stroke-linecap="round">
+        <path d="M12 2.5 21.5 7 12 11.5 2.5 7Z"/>
+        <path d="M2.5 12 12 16.5 21.5 12"/>
+        <path d="M2.5 17 12 21.5 21.5 17"/>
+      </svg>
+      GISCatasto
+    </div>
+
+    <div id="topbar-search">
+      <input type="text" id="search-input" placeholder="Cerca un luogo o un indirizzo&#8230;" autocomplete="off">
+      <button class="search-clear-btn" id="search-clear" title="Cancella">&#10005;</button>
+    </div>
+
+    <div id="topbar-coords">
+      <div class="coord-block">
+        <span class="label">LAT</span>
+        <span class="val" id="tc-lat">--</span>
+      </div>
+      <div class="coord-block">
+        <span class="label">LON</span>
+        <span class="val" id="tc-lon">--</span>
+      </div>
+      <div class="coord-block">
+        <span class="label">MGRS</span>
+        <span class="val" id="tc-mgrs">--</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <div id="main">
+
+    <!-- SIDEBAR -->
+    <aside id="sidebar" class="collapsed">
+      <div class="tab-bar">
+        <button class="tab-btn active" data-panel="layers">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:2px"><polygon points="12,2 2,7 12,12 22,7"/><polyline points="2,17 12,22 22,17"/><polyline points="2,12 12,17 22,12"/></svg>
+          Layer
+        </button>
+        <button class="tab-btn" data-panel="draw">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:2px"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>
+          Disegno
+        </button>
+        <button class="tab-btn" data-panel="bookmarks">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:2px"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
+          Salvati
+        </button>
+        <button class="tab-btn" data-panel="offline">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:2px"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          Cache
+        </button>
+        <button class="tab-btn" data-panel="cadaster">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:2px"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+          Catasto
+        </button>
+        <button class="tab-btn" data-panel="guide">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:2px"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Guida
+        </button>
+      </div>
+
+      <!-- PANEL: LAYERS -->
+      <div class="panel active" id="panel-layers">
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+            Basemap
+          </div>
+          <div class="card-body">
+            <div class="basemap-list" id="basemap-list">
+              <label class="basemap-item"><input type="radio" name="basemap" value="osm_std" checked> <span>OpenStreetMap</span></label>
+              <label class="basemap-item"><input type="radio" name="basemap" value="osm"> <span>OpenTopoMap</span></label>
+              <label class="basemap-item"><input type="radio" name="basemap" value="google_maps"> <span>Street Map</span></label>
+              <label class="basemap-item"><input type="radio" name="basemap" value="esri_sat"> <span>ESRI Satellite</span></label>
+              <label class="basemap-item"><input type="radio" name="basemap" value="esri_topo"> <span>ESRI Topo</span></label>
+              <label class="basemap-item"><input type="radio" name="basemap" value="natgeo"> <span>NatGeo</span></label>
+              <!-- The only bundled basemap the offline downloader will accept (see BASEMAPS). -->
+              <label class="basemap-item"><input type="radio" name="basemap" value="pcn_ortho"> <span>Ortofoto Italia 2012 (scaricabile)</span></label>
+            </div>
+            <button class="btn btn-secondary btn-full" id="ws-toggle-btn" style="padding:6px 10px;margin-top:2px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Aggiungi mappa web
+            </button>
+            <div id="ws-form" style="display:none;flex-direction:column;gap:7px;margin-top:4px;padding-top:8px;border-top:1px solid var(--border)">
+              <div class="field">
+                <label>Tipo di servizio</label>
+                <select id="ws-type">
+                  <option value="wms">WMS (immagine raster)</option>
+                  <option value="wfs">WFS (geometrie vettoriali)</option>
+                  <option value="wmts">WMTS / tile XYZ</option>
+                  <option value="arcgis">ArcGIS MapServer</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>URL</label>
+                <input type="text" id="ws-url" placeholder="https://&#8230;" autocomplete="off" autocorrect="off" spellcheck="false">
+              </div>
+              <div class="field" id="ws-layers-field">
+                <label id="ws-layers-label">Nome layer / typeName</label>
+                <div style="display:flex;gap:4px">
+                  <input type="text" id="ws-layers" placeholder="es. CP.CadastralParcel" style="flex:1;min-width:0">
+                  <button class="btn btn-secondary" id="btn-ws-caps" title="Leggi i layer disponibili" style="padding:5px 9px;flex-shrink:0">Leggi i layer</button>
+                </div>
+                <select id="ws-layers-select" style="display:none;margin-top:4px"></select>
+              </div>
+              <div class="field" id="ws-ver-field">
+                <label id="ws-ver-label">Versione</label>
+                <select id="ws-version">
+                  <option value="1.1.1">1.1.1</option>
+                  <option value="1.3.0">1.3.0</option>
+                </select>
+              </div>
+              <div class="field" id="ws-minzoom-field" style="display:none">
+                <label>Zoom minimo per caricare le geometrie</label>
+                <input type="number" id="ws-minzoom" min="1" max="20" value="15">
+                <p class="hint" style="margin:3px 0 0">Il WFS scarica tutte le geometrie dentro la vista: a zoom basso il rettangolo copre aree enormi e il server può restituire milioni di elementi. Il caricamento parte solo sopra questo livello di zoom, per non impuntare l’app.</p>
+              </div>
+              <div class="field" id="ws-filter-field" style="display:none">
+                <label>Attributo del filtro</label>
+                <input type="text" id="ws-filter-attr" placeholder="es. CODICE">
+              </div>
+              <div class="field" id="ws-filter-vals-field" style="display:none">
+                <label>Valori del filtro</label>
+                <input type="text" id="ws-filter-vals" placeholder="es. A001,B002">
+                <p class="hint" style="margin:3px 0 0">Separati da virgola — uno solo: <code>A001</code>, più valori: <code>A001,B002</code>. Sono ammessi i caratteri jolly <code>*</code> e <code>?</code>. Carica prima il layer senza filtro e tocca una geometria per leggere i nomi degli attributi nel popup.</p>
+              </div>
+              <div class="field" id="ws-crs-field">
+                <label>CRS / SRS</label>
+                <select id="ws-crs">
+                  <option value="EPSG:4258" selected>EPSG:4258 (ETRS89 — WMS italiani ed europei)</option>
+                  <option value="EPSG:4326">EPSG:4326 (WGS84 lat/lon)</option>
+                  <option value="EPSG:3857">EPSG:3857 (WebMercator)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Nome visualizzato</label>
+                <input type="text" id="ws-name" placeholder="Nome della mappa (facoltativo)">
+              </div>
+              <div class="field">
+                <label>Aggiungi come</label>
+                <select id="ws-use">
+                  <option value="basemap">Basemap (sostituisce quella attuale)</option>
+                  <option value="overlay" selected>Overlay (sopra la basemap)</option>
+                </select>
+              </div>
+              <p class="hint" id="ws-hint"></p>
+              <p class="hint" id="ws-scale-hint" style="display:none"></p>
+              <button class="btn btn-primary btn-full" id="btn-ws-add">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Aggiungi
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            Configurazione mappe
+          </div>
+          <div class="card-body" style="gap:6px">
+            <button class="btn btn-secondary btn-full" id="btn-cfg-save" style="padding:6px 10px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+              Esporta configurazione
+            </button>
+            <label class="btn btn-secondary btn-full" style="padding:6px 10px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              Importa configurazione
+              <input type="file" id="cfg-file-input" accept=".json" style="display:none">
+            </label>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            Carica file
+          </div>
+          <div class="card-body">
+            <div class="upload-area" id="upload-area">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              <p>Trascina o tocca per caricare</p>
+              <small>KML &middot; KMZ &middot; GeoJSON &middot; GPX</small>
+              <!-- accept="*/*": Android SAF pickers filter by MIME, not extension, and grey out .kml/.gpx/.geojson on some devices. Extension is validated in loadFile(). -->
+              <input type="file" id="file-input" accept="*/*" multiple style="display:none">
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12,2 2,7 12,12 22,7"/><polyline points="2,17 12,22 22,17"/><polyline points="2,12 12,17 22,12"/></svg>
+            Layer caricati
+          </div>
+          <div class="card-body" style="padding:8px">
+            <div id="layer-list">
+              <p class="layer-empty">Nessun layer caricato</p>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /panel-layers -->
+
+      <!-- PANEL: DRAWING -->
+      <div class="panel" id="panel-draw">
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/></svg>
+            Strumenti di disegno
+          </div>
+          <div class="card-body">
+            <p class="hint">Usa la barra degli strumenti sulla mappa per disegnare. Tocca una forma per darle un nome ed esportarla in KML.</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+            Gestione disegni
+          </div>
+          <div class="card-body">
+            <button class="btn btn-success btn-full" id="btn-export-all-kml">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Esporta tutto in KML
+            </button>
+            <button class="btn btn-secondary btn-full" id="btn-export-all-geojson">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Esporta tutto in GeoJSON
+            </button>
+            <input type="file" id="import-geojson-input" accept=".json,.geojson" style="display:none">
+            <button class="btn btn-secondary btn-full" id="btn-import-geojson">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/><polyline points="17 8 12 3 7 8"/></svg>
+              Importa disegni GeoJSON
+            </button>
+            <button class="btn btn-danger btn-full" id="btn-clear-draw">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+              Cancella tutti i disegni
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="9" r="6"/><circle cx="15" cy="15" r="6"/></svg>
+            Strumenti KML
+          </div>
+          <div class="card-body">
+            <p class="hint">Scegli uno o più layer KML: i loro poligoni vengono fusi in una sola geometria, eliminando i confini interni. Buchi e aree staccate restano tali.</p>
+            <button class="btn btn-secondary btn-full" id="btn-dissolve">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><circle cx="9" cy="9" r="6"/><circle cx="15" cy="15" r="6"/></svg>
+              Dissolvi geometrie KML
+            </button>
+            <div id="dissolve-picker" class="hidden" style="margin-top:10px">
+              <div id="dissolve-picker-list" style="margin-bottom:8px"></div>
+              <div style="display:flex;gap:8px;margin-bottom:8px">
+                <button class="btn btn-secondary" id="dissolve-ok" style="flex:1" disabled>&#10003; Dissolvi i selezionati</button>
+                <button class="btn btn-secondary" id="dissolve-cancel" title="Annulla">&#10005;</button>
+              </div>
+              <div id="dissolve-progress-wrap" class="hidden">
+                <div class="offline-progress-bg"><div class="offline-progress-fill" id="dissolve-progress-fill"></div></div>
+                <span class="hint" id="dissolve-progress-text" style="display:block;text-align:center;margin-top:3px">Elaborazione…</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
+            Statistiche dei disegni
+          </div>
+          <div class="card-body">
+            <div id="draw-stats" class="result-box show" style="display:block">
+              <span class="r-label">Forme disegnate: </span><span class="r-val" id="stat-count">0</span><br>
+              <span class="r-label">Ultima area: </span><span class="r-val" id="stat-area">--</span><br>
+              <span class="r-label">Ultima distanza: </span><span class="r-val" id="stat-dist">--</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Traccia GPS
+          </div>
+          <div class="card-body">
+            <button class="btn btn-success btn-full" id="btn-track-toggle">&#x25B6; Avvia traccia</button>
+            <div id="track-stats" class="result-box show" style="display:none;margin-top:8px">
+              <span class="r-label">Punti: </span><span class="r-val" id="track-pts">0</span><br>
+              <span class="r-label">Distanza: </span><span class="r-val" id="track-dist">0 m</span>
+            </div>
+            <button class="btn btn-secondary btn-full" id="btn-track-export" style="display:none;margin-top:6px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Esporta traccia GPX
+            </button>
+            <button class="btn btn-secondary btn-full" id="btn-track-export-kml" style="display:none;margin-top:4px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Esporta traccia KML
+            </button>
+            <button class="btn btn-secondary btn-full" id="btn-track-profile" style="display:none;margin-top:4px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="3 17 8 12 13 15 19 7"/><line x1="3" y1="21" x2="21" y2="21"/></svg>
+              Profilo altimetrico
+            </button>
+            <button class="btn btn-danger btn-full" id="btn-track-clear" style="display:none;margin-top:4px">Cancella traccia</button>
+          </div>
+        </div>
+
+      </div><!-- /panel-draw -->
+
+      <!-- PANEL: BOOKMARKS -->
+      <div class="panel" id="panel-bookmarks">
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
+            Segnalibri salvati
+          </div>
+          <div class="card-body" style="padding:8px">
+            <div id="bookmark-list">
+              <p class="bookmark-empty">Nessun segnalibro — tocca “Salva la vista corrente” qui sotto, oppure tieni premuto sulla mappa per salvare un punto.</p>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn btn-secondary btn-full" id="btn-add-bookmark" style="padding:7px 10px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Salva la vista corrente
+        </button>
+
+      </div><!-- /panel-bookmarks -->
+
+      <!-- PANEL: TILE CACHE -->
+      <div class="panel" id="panel-offline">
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+            Cache dei tile
+          </div>
+          <div class="card-body">
+            <p class="hint">I tile che guardi sulla mappa vengono messi in cache da soli. Quando la cache arriva al limite di 4 GB l’app chiede prima di liberare spazio: non viene cancellato niente senza il tuo consenso. Per creare una basemap offline scegli l’area con un KML, lo zoom massimo e la mappa, poi tocca il pulsante: i tile mancanti vengono scaricati e la basemap resta disponibile senza rete.</p>
+            <div class="field">
+              <label>Estensione dell’area (file KML)</label>
+              <label class="btn btn-secondary btn-full" style="cursor:pointer;padding:8px 12px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                Scegli il KML dell’area
+                <!-- accept="*/*": see #file-input; extension is validated in the change handler. -->
+                <input type="file" id="offline-kml-input" accept="*/*" style="display:none">
+              </label>
+              <span class="hint" id="offline-kml-name" style="margin-top:2px"></span>
+            </div>
+            <div class="field">
+              <label>Zoom massimo (1–18)</label>
+              <input type="number" id="offline-zoom" min="1" max="18" value="14">
+            </div>
+            <div class="field">
+              <label>Mappa</label>
+              <select id="offline-map-select"></select>
+            </div>
+            <!-- Shown for sources the user added: the app cannot know their terms, so it asks
+                 for an explicit statement instead of a notice that can be read past. Bundled
+                 sources skip this — either their terms allow caching or they are blocked. -->
+            <div id="offline-tos-warn" class="offline-tos-warn" style="display:none">
+              &#9888; I termini d&rsquo;uso di questa mappa non li conosciamo. Molti servizi vietano il download massivo dei tile.
+              <label class="offline-tos-ack">
+                <input type="checkbox" id="offline-tos-ack">
+                <span>Confermo che i termini di questo servizio consentono la copia locale dei tile, e me ne assumo la responsabilit&agrave;.</span>
+              </label>
+            </div>
+            <div id="offline-progress-section" style="display:none;margin-top:4px">
+              <div class="offline-progress-bg"><div class="offline-progress-fill" id="offline-progress-fill"></div></div>
+              <span class="hint" id="offline-progress-text" style="display:block;text-align:center;margin-top:3px"></span>
+            </div>
+            <button class="btn btn-primary btn-full" id="btn-offline-start">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              Converti la cache in mappa
+            </button>
+            <button class="btn btn-danger btn-full" id="btn-offline-cancel" style="display:none">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              Interrompi
+            </button>
+            <button class="btn btn-secondary btn-full" id="btn-offline-clear" style="margin-top:8px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+              Svuota la cache dei tile
+            </button>
+          </div>
+        </div>
+      </div><!-- /panel-offline -->
+
+      <!-- PANEL: CADASTER -->
+      <div class="panel" id="panel-cadaster">
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+            Ricerca catastale
+          </div>
+          <div class="card-body">
+            <p class="hint" style="margin:0 0 8px">Trova le particelle catastali per comune, foglio e numero. Richiede la connessione.</p>
+
+            <div class="field">
+              <label>Regione</label>
+              <select id="cad-region"><option value="">Scegli la regione&#8230;</option></select>
+            </div>
+            <div class="field">
+              <label>Provincia</label>
+              <select id="cad-province" disabled><option value="">Scegli la provincia&#8230;</option></select>
+            </div>
+            <div class="field">
+              <label>Comune</label>
+              <select id="cad-comune" disabled><option value="">Scegli il comune&#8230;</option></select>
+            </div>
+
+            <div class="field">
+              <label>Foglio</label>
+              <select id="cad-sheet" disabled><option value="">Scegli prima il comune&#8230;</option></select>
+            </div>
+
+            <div class="field">
+              <label>Particella</label>
+              <input type="text" id="cad-parcel" placeholder="es. 123 oppure 123,124" autocomplete="off">
+              <p class="hint" style="margin:3px 0 0">Separate da virgola per più particelle. Lascia vuoto per mostrare tutte quelle del foglio. Qui i caratteri jolly non sono ammessi &mdash; per cercare per schema usa il filtro del layer (&#9661; su Catasto Particelle).</p>
+            </div>
+
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <button class="btn btn-primary" id="cad-go" disabled style="flex:1">Vai</button>
+              <button class="btn btn-secondary" id="cad-reset">Reset</button>
+            </div>
+
+            <div id="cad-status" class="hint" style="margin-top:8px;min-height:14px"></div>
+          </div>
+        </div>
+
+      </div><!-- /panel-cadaster -->
+
+      <!-- PANEL: GUIDE -->
+      <div class="panel" id="panel-guide">
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Quick reference
+          </div>
+          <div class="card-body" style="gap:12px">
+
+            <div class="guide-section">
+              <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2a8 8 0 0 1 8 8c0 5.25-8 14-8 14S4 15.25 4 10a8 8 0 0 1 8-8z"/></svg>Spostarsi sulla mappa</h4>
+              <div class="guide-item"><span class="guide-key">Trascina</span><span class="guide-desc">Sposta la mappa</span></div>
+              <div class="guide-item"><span class="guide-key">Pizzico</span><span class="guide-desc">Zoom avanti e indietro</span></div>
+              <div class="guide-item"><span class="guide-key">Rotazione a 2 dita</span><span class="guide-desc">La rotazione è disattivata di serie: la mappa resta con il nord in alto, così un pizzico non la ruota per sbaglio. Tocca la bussola ↘ per cambiare: azzurra accesa = rotazione libera (le due dita ruotano), spenta = bloccata a nord. Lo zoom a pizzico funziona comunque, in entrambi i casi.</span></div>
+              <div class="guide-item"><span class="guide-key">Tocco prolungato</span><span class="guide-desc">Menù contestuale con tutti i formati di coordinate</span></div>
+            </div>
+
+            <div class="guide-section">
+              <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Ricerca</h4>
+              <div class="guide-item"><span class="guide-key">Barra in alto</span><span class="guide-desc">Scrivi un indirizzo e premi Invio: la ricerca parte alla conferma, non mentre digiti</span></div>
+              <div class="guide-item"><span class="guide-key">📍 pulsante ↗</span><span class="guide-desc">Vai a una coordinata (DD, DMS, MGRS, UTM) o converti fra i formati</span></div>
+            </div>
+
+            <div class="guide-section">
+              <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>Layer</h4>
+              <div class="guide-item"><span class="guide-key">Basemap</span><span class="guide-desc">Scegli la mappa di sfondo dall’elenco</span></div>
+              <div class="guide-item"><span class="guide-key">Aggiungi mappa web</span><span class="guide-desc">Aggiungi per URL un WMS, un WFS, un WMTS/XYZ o un ArcGIS MapServer. Overlay WMS: una sola immagine GetMap per vista (non a tile), richiesta nel CRS geografico del server (EPSG:4258/4326/6706) o in Web Mercator (EPSG:3857) — ideale per sovrapposizioni raster come le etichette. WFS: geometrie vettoriali (poligoni e punti) scaricate per vista sopra lo zoom minimo impostato (di serie 15: valori più bassi rischiano scaricamenti enormi) e disegnate come GeoJSON — la scelta giusta per dati catastali e topografici. Tocca “Leggi i layer” per ricavare da solo nomi, CRS e versione del protocollo dalle capabilities del server; per i WMS riporta anche l’intervallo di zoom in cui il layer viene disegnato, perché fuori da quell’intervallo il server risponde con un’immagine vuota invece che con un errore — un overlay WMS aggiunto così viene poi richiesto solo dentro l’intervallo, e non dipinge più un riquadro vuoto sotto di esso. WMTS/XYZ e le cache ArcGIS entrano come basemap, i WMS come overlay, ma la scelta resta modificabile. Gli overlay vengono salvati e ripristinati al lancio successivo con la loro opacità e visibilità. Funziona con i server conformi OGC (GeoServer, deegree, MapServer, QGIS Server); gli endpoint MapServer con <code>?map=...</code> vengono conservati. Provato su Agenzia delle Entrate INSPIRE, PCN (minambiente) e IGM.</span></div>
+              <div class="guide-item"><span class="guide-key">Filtro WFS</span><span class="guide-desc">I campi attributo e valori mostrano solo le geometrie che corrispondono. Carica prima il layer senza filtro e tocca una geometria per leggere i nomi degli attributi nel popup. Più valori esatti: separati da virgola (es. <code>A001,B002</code>). Caratteri jolly: <code>*</code> (qualsiasi sequenza), <code>?</code> (un solo carattere) — es. <code>MIL*</code>. Usa l’OGC Filter Encoding (<code>PropertyIsEqualTo</code> / <code>PropertyIsLike</code>), supportato da GeoServer, deegree, MapServer e QGIS Server. A layer caricato, tocca il pulsante ▽ sulla sua riga nel pannello per modificare il filtro sul posto: non serve rimuoverlo e riaggiungerlo.</span></div>
+              <div class="guide-item"><span class="guide-key">Selezione WFS</span><span class="guide-desc">Quando ci sono layer WFS caricati compare un distintivo con “⊙ Seleziona”. Toccalo per attivare la selezione con un tocco: se i layer WFS sono più di uno appare un elenco per scegliere il bersaglio — solo le geometrie di quel layer rispondono al tocco, le altre si aprono normalmente. Scelto il layer, tocca una geometria per selezionarla o deselezionarla subito, senza popup. Le geometrie selezionate mostrano un’etichetta fissa presa dalla proprietà <code>label</code> o <code>name</code> quando c’è (nel catasto: codice o numero della particella). Il distintivo riporta il nome del layer attivo. Finché la modalità è accesa il layer bersaglio viene portato temporaneamente in primo piano, così riceve sempre i tuoi tocchi qualunque sia la sua posizione nell’elenco; uscendo, il tuo ordine torna com’era. Tocca di nuovo “⊙ Seleziona” per azzerare. In alternativa funziona anche il pulsante “☆ Seleziona” nel popup. Il contatore mostra quante ne hai scelte: tocca ⬇ KML per esportarle, ✕ per deselezionare tutto. Il KML esportato conserva colore e trasparenza del layer, quindi si apre già vestito in Google Earth.</span></div>
+              <div class="guide-item"><span class="guide-key">Carica file</span><span class="guide-desc">Importa KML, KMZ, GeoJSON e GPX, trascinandoli o toccando. Un KML esportato dalla selezione WFS mostra gli attributi catastali nel popup quando lo tocchi. Ricaricare un file già importato lo aggiorna sul posto: mantiene la sua posizione nell’elenco invece di essere aggiunto una seconda volta.</span></div>
+              <div class="guide-item"><span class="guide-key">Elenco dei layer</span><span class="guide-desc">Accendi e spegni, regola l’opacità, riordina trascinando, esporta o elimina. Doppio tocco sul nome per rinominarlo. L’ordine dell’elenco è l’ordine di sovrapposizione, senza vincoli: qualsiasi layer può stare sopra o sotto qualsiasi altro, anche un WMS raster sopra un file importato o sopra il catasto. L’ordine che imposti viene ricordato fra un avvio e l’altro. I layer nuovi entrano sotto quelli che coprirebbero — un raster sotto i vettori, una linea sopra le altre linee — e da lì li sposti. I pulsanti che non hanno senso restano nascosti: gli overlay WMS raster non hanno lo zoom all’estensione (non ne hanno una vettoriale) e i layer senza file di origine (WMS/WFS) non hanno l’esportazione.</span></div>
+              <div class="guide-item"><span class="guide-key">Vuoto (bucato) ∅</span><span class="guide-desc">Tocca il pulsante ∅ su un layer da file per lasciarne solo il bordo, con il riempimento trasparente. Tocca di nuovo per tornare indietro. Vale per i poligoni di KML, GeoJSON e GPX. Lo stato viene salvato e ripristinato al lancio successivo.</span></div>
+              <div class="guide-item"><span class="guide-key">Modifica KML ✏</span><span class="guide-desc">Tocca la matita su un layer KML per modificarne i vertici: trascinali per spostarli, doppio tocco per eliminarne uno, trascina un punto intermedio tratteggiato per aggiungerne uno nuovo. Salva riporta le modifiche nel layer e aggiorna il KML in memoria. Annulla le scarta tutte.</span></div>
+              <div class="guide-item"><span class="guide-key">Configurazione mappe</span><span class="guide-desc">“Esporta configurazione” scrive un JSON con i servizi web che hai aggiunto — WMS, WFS, WMTS/XYZ, ArcGIS — conservando nome del layer, CRS, filtro, colore, opacità, visibilità e ordine di sovrapposizione, più le eventuali eccezioni SSL. L’importazione li ripristina su un altro dispositivo o dopo una reinstallazione. <b>Cosa non contiene:</b> i file che hai importato (KML, KMZ, GeoJSON, GPX), i tuoi disegni, i segnalibri e i tile in cache. Quelli stanno da un’altra parte sul dispositivo e viaggiano come file: esporta un layer da file dal suo elenco, e i disegni da Disegno &rarr; “Esporta tutto”. Le basemap offline scaricate compaiono nel JSON, ma solo come voce: i tile non ci sono, quindi su un altro dispositivo l’area va riscaricata.</span></div>
+            </div>
+
+            <div class="guide-section">
+              <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>Disegno</h4>
+              <div class="guide-item"><span class="guide-key">Barra strumenti ↖</span><span class="guide-desc">Disegna segnaposto, linea, poligono, rettangolo e cerchio — barra in alto a sinistra sulla mappa</span></div>
+              <div class="guide-item"><span class="guide-key">Modifica ↖</span><span class="guide-desc">Sposta e rimodella le forme già disegnate: trascina i vertici, doppio tocco per eliminarne uno, trascina un punto intermedio tratteggiato per aggiungerne uno. Salva conferma, Annulla scarta</span></div>
+              <div class="guide-item"><span class="guide-key">Tocca una forma</span><span class="guide-desc">Dalle un nome, aggiungi una descrizione, cambia icona, colore e opacità, esportala in KML o eliminala. Nome e descrizione si salvano mentre scrivi, non serve confermare.</span></div>
+              <div class="guide-item"><span class="guide-key">Salvataggio automatico</span><span class="guide-desc">I disegni — nome, descrizione, colore e icona compresi — si salvano da soli a ogni modifica e tornano alla riapertura</span></div>
+              <div class="guide-item"><span class="guide-key">Esporta tutto</span><span class="guide-desc">Esporta tutti i disegni in KML o GeoJSON (con colore, icona, tipo e opacità)</span></div>
+              <div class="guide-item"><span class="guide-key">Cancella tutto</span><span class="guide-desc">Chiede conferma prima di eliminare tutti i disegni</span></div>
+              <div class="guide-item"><span class="guide-key">Dissolvi KML</span><span class="guide-desc">Nella sezione Strumenti KML del pannello Disegno, tocca “Dissolvi geometrie KML” per aprire l’elenco dei layer. Spunta uno o più KML caricati, poi tocca “Dissolvi i selezionati”: tutti i poligoni dei layer scelti vengono fusi in una sola geometria e i confini interni spariscono. Buchi e aree staccate restano tali. Scrivi nome e descrizione e salva come nuovo layer KML. Serve turf.min.js nella cartella dell’app.</span></div>
+            </div>
+
+            <div class="guide-section">
+              <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>GPS e tracce</h4>
+              <div class="guide-item"><span class="guide-key">GPS pulsante ↘</span><span class="guide-desc">Centra la mappa sulla tua posizione — tocca il segnaposto per coordinate complete e quota</span></div>
+              <div class="guide-item"><span class="guide-key">Schermo acceso</span><span class="guide-desc">Con il GPS attivo lo schermo resta acceso da solo</span></div>
+              <div class="guide-item"><span class="guide-key">Disegno › GPS</span><span class="guide-desc">Avvia e ferma la registrazione della traccia GPS; alla fine esportala in GPX o KML e, se vuoi, salvala come disegno (comparirà nell’elenco col nome che scegli)</span></div>
+              <div class="guide-item"><span class="guide-key">Barra di stato</span><span class="guide-desc">Mostra LAT, LON, DM, UTM, MGRS, precisione, velocità (km/h), direzione, quota, zoom e CRS — scorri in orizzontale se qualcosa è tagliato</span></div>
+              <div class="guide-item"><span class="guide-key">Profilo altimetrico</span><span class="guide-desc">Dopo aver fermato una traccia con le quote, mostra il grafico quota/distanza</span></div>
+              <div class="guide-item"><span class="guide-key">✈ Modalità volo</span><span class="guide-desc">Quando la quota GPS supera i 200 m sul terreno (AGL) il segnaposto diventa un aeroplano orientato secondo la direzione e compare il pannello Volo in basso a sinistra con SPD, AGL, ALT e HDG — si aggiorna in tempo reale, si trascina e si chiude</span></div>
+            </div>
+
+            <div class="guide-section">
+              <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Misure</h4>
+              <div class="guide-item"><span class="guide-key">📏 pulsante ↗</span><span class="guide-desc">Tocca i punti per misurare la distanza — il riquadro mostra l’azimut in entrata e in uscita di ogni tratto</span></div>
+            </div>
+
+            <div class="guide-section">
+              <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3,11 22,2 13,21 11,13 3,11"/></svg>Navigazione</h4>
+              <div class="guide-item"><span class="guide-key">Freccia ↘</span><span class="guide-desc">Imposta la destinazione per indirizzo o toccando la mappa — auto, a piedi o bicicletta — percorso calcolato da OSRM</span></div>
+              <div class="guide-item"><span class="guide-key">Orientamento della mappa</span><span class="guide-desc">Durante la navigazione la mappa ruota per seguire la tua direzione di marcia letta dal GPS: succede anche con la rotazione bloccata a nord, e la bussola ↘ si accende in ambra per segnalarlo. Se ti fermi, la mappa tiene l’ultimo orientamento invece di girare a vuoto; la modalità volo è esclusa. Terminata la navigazione torna a nord, a meno che tu non abbia acceso la rotazione libera dalla bussola.</span></div>
+              <div class="guide-item"><span class="guide-key">Cono visivo</span><span class="guide-desc">A piedi, mentre ti muovi, viene disegnato un settore di 70° e 45 m lungo la direzione di marcia; quando ti fermi sparisce, perché una direzione non c’è più</span></div>
+              <div class="guide-item"><span class="guide-key">Cruscotto di navigazione</span><span class="guide-desc">Un pannellino in basso a sinistra mostra in tempo reale velocità, distanza dalla destinazione e orario di arrivo. Si trascina dall’intestazione e sparisce da solo a navigazione finita</span></div>
+              <div class="guide-item"><span class="guide-key">Fuori percorso</span><span class="guide-desc">Ricalcola da solo il percorso se ti allontani di oltre 50 m</span></div>
+              <div class="guide-item"><span class="guide-key">Esporta percorso</span><span class="guide-desc">A percorso disegnato, esportalo in KML (finisce nella cartella Download e funziona offline) oppure salvalo come disegno: una linea cliccabile che resta sopra il catasto anche dopo che hai chiuso la navigazione. La geometria del percorso deriva dai dati OpenStreetMap (ODbL).</span></div>
+              <div class="guide-item"><span class="guide-key">Reset</span><span class="guide-desc">Cancella destinazione e percorso — pronta per una navigazione nuova</span></div>
+              <div class="guide-item"><span class="guide-key">Trascina il pannello</span><span class="guide-desc">Tieni premuta l’intestazione per spostare il pannello di navigazione dove vuoi</span></div>
+            </div>
+
+
+            <div class="guide-section">
+              <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="12,3 14,11 12,10 10,11" fill="currentColor"/></svg>Bussola</h4>
+              <div class="guide-item"><span class="guide-key">Bussola ↘</span><span class="guide-desc">Indica il nord e segue la rotazione della mappa. Toccala per cambiare modo: spenta = bloccata col nord in alto (impostazione di serie), azzurra accesa = rotazione libera. Toccandola da bloccata ricentra anche sulla tua posizione GPS. In navigazione la mappa si orienta da sola secondo la marcia e la bussola diventa ambra; quando ti fermi torna a nord, salvo che tu abbia lasciato la rotazione libera. La scelta viene ricordata fra un avvio e l’altro.</span></div>
+            </div>
+
+            <div class="guide-section">
+              <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>Segnalibri</h4>
+              <div class="guide-item"><span class="guide-key">Scheda Salvati</span><span class="guide-desc">Tocca una voce per andarci — aggiungi dalla vista corrente o con un tocco prolungato sulla mappa</span></div>
+            </div>
+
+            <div class="guide-section">
+              <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Cache dei tile</h4>
+              <div class="guide-item"><span class="guide-key">Cache automatica</span><span class="guide-desc">Ogni tile che guardi finisce in cache mentre navighi (la cache “volatile”), tenuta separata dalle basemap offline che hai salvato</span></div>
+              <div class="guide-item"><span class="guide-key">Cache piena (4 GB)</span><span class="guide-desc">Arrivati a 4 GB una richiesta chiede prima di liberare spazio: senza il tuo assenso non viene cancellato niente. Se le mappe offline stanno sotto i 3,5 GB, confermando si svuotano solo i tile di navigazione e le mappe offline restano. Annullando, te lo richiede al prossimo avvio</span></div>
+              <div class="guide-item"><span class="guide-key">Cache lenta</span><span class="guide-desc">Una cache grande rallenta la ricerca dei tile molto prima di arrivare a 4 GB, quindi la stessa richiesta compare anche quando le letture si fanno lente — misurate rispetto a quanto era veloce questo dispositivo quando la cache era piccola, non rispetto a una soglia fissa. Il punto in cui compare cambia perciò da dispositivo a dispositivo</span></div>
+              <div class="guide-item"><span class="guide-key">Mappe offline al limite</span><span class="guide-desc">Se le mappe offline salvate arrivano a 3,5 GB, la richiesta propone invece di sfoltire i tile più vecchi fino a 2,5 GB (circa 1 GB liberato; le mappe restano in elenco, con dei buchi). Se te lo chiede spesso, rimuovi un’intera mappa con la sua ✕</span></div>
+              <div class="guide-item"><span class="guide-key">Installazione precedente</span><span class="guide-desc">Le mappe offline salvate da una versione precedente usano un formato vecchio; arrivati a 4 GB l’app propone una pulizia una tantum (poi vanno riscaricate) per tenere veloce l’archivio. Rimandando resta più lenta e la richiesta torna al lancio successivo</span></div>
+              <div class="guide-item"><span class="guide-key">Scheda Cache</span><span class="guide-desc">Scegli il KML dell’area, lo zoom massimo e la mappa, poi tocca “Converti la cache in mappa”: l’app controlla la cache, scarica tutti i tile mancanti (dallo zoom 1 al massimo) e registra la basemap offline in una cache protetta tutta sua</span></div>
+              <div class="guide-item"><span class="guide-key">Quali mappe</span><span class="guide-desc">“Ortofoto Italia 2012” è la basemap di serie che puoi scaricare: è la copertura aerea nazionale pubblicata dal Geoportale Nazionale, i cui termini non pongono limiti alla copia locale. Sono 50 cm da un volo del 2012, quindi più vecchia e meno fine delle immagini online, e viene disegnata solo dallo zoom 11 in avanti. Le altre basemap di serie (OpenTopoMap, OpenStreetMap, CARTO, Esri) funzionano solo online: i rispettivi fornitori non consentono il download massivo dei tile, e l’app lo impedisce invece di lasciare la scelta a te. Le basemap che aggiungi tu restano sempre scaricabili, nel rispetto dei loro termini. Navigare su una qualsiasi di esse riempie comunque la cache volatile, ed è quello che tiene funzionanti offline le aree guardate di recente.</span></div>
+              <div class="guide-item"><span class="guide-key">Basemap offline</span><span class="guide-desc">Compare nell’elenco delle basemap e serve tutti i livelli di zoom dalla sua cache, senza rete. La rimuovi con la ✕, che elimina anche i tile scaricati</span></div>
+              <div class="guide-item"><span class="guide-key">Interrompi</span><span class="guide-desc">Ferma il download a metà; i tile già scaricati restano in cache</span></div>
+              <div class="guide-item"><span class="guide-key">Svuota la cache dei tile</span><span class="guide-desc">Cancella TUTTI i tile in cache: quelli di navigazione e ogni basemap offline salvata (nessun altro dato dell’app viene toccato). Le basemap offline vanno riscaricate</span></div>
+            </div>
+
+            <div class="guide-section">
+              <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>Catasto</h4>
+              <div class="guide-item"><span class="guide-key">Precaricato</span><span class="guide-desc">Il catasto dell’Agenzia delle Entrate è caricato e attivo di serie: particelle e fogli del Catasto Terreni (WFS) più le etichette delle particelle, il Catasto Fabbricati e i confini provinciali (WMS). Particelle, fabbricati ed etichette compaiono man mano che zoomi; le province si vedono a scala ampia. Puoi spegnerli o rimuoverli dalla scheda Layer.</span></div>
+              <div class="guide-item"><span class="guide-key">Scheda Catasto</span><span class="guide-desc">Trova le particelle catastali scendendo per gradi: regione &rarr; provincia &rarr; comune. L’elenco dei fogli disponibili per quel comune arriva dal WFS INSPIRE dell’Agenzia delle Entrate. Scegli il foglio e, se vuoi, scrivi il numero di particella (separate da virgola per più di una; qui i caratteri jolly non sono ammessi &mdash; per quelli usa il filtro del layer Catasto Particelle), poi tocca “Vai”: la mappa zooma sulla particella, selezionata ed evidenziata, e mostra intorno quelle vicine per orientarti (il filtro usato per trovarla si azzera da solo una volta selezionata). Richiede la connessione; i confini amministrativi vengono dal WFS PCN minambiente.</span></div>
+              <div class="guide-item"><span class="guide-key">Reset</span><span class="guide-desc">Azzera il risultato della ricerca: deseleziona le particelle che aveva evidenziato e toglie il filtro catastale attivo, riportando il layer Catasto Particelle al suo comportamento normale (nessun filtro, solo la vista corrente). Dopo “Vai” le particelle intorno restano mostrate, quindi è questo il pulsante con cui lasci la selezione quando hai finito.</span></div>
+              <div class="guide-item"><span class="guide-key">Filtro già attivo</span><span class="guide-desc">Se sul layer Catasto Particelle c’è già un filtro WFS impostato a mano (col pulsante &#9661; nell’elenco dei layer), la ricerca guidata lo sostituisce &mdash; un avviso te lo segnala quando succede.</span></div>
+              <div class="guide-item"><span class="guide-key">Punti fiduciali</span><span class="guide-desc">I punti fiduciali non sono precaricati. Dove la Regione li pubblica via WFS &mdash; il Piemonte lo fa &mdash; aggiungi il servizio da “Aggiungi mappa web” e i punti diventano un layer interrogabile come gli altri. Altrove, importa un KML ricavato dal TAF, la tabella dei punti fiduciali pubblicata dall’Agenzia delle Entrate. In entrambi i casi il layer viene salvato e ripristinato al lancio successivo. Questi punti non hanno valore legale: un atto di aggiornamento catastale richiede le monografie ufficiali dell’AdE.</span></div>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 18v-6M9 15l3 3 3-3"/></svg>
+            Diagnostica
+          </div>
+          <div class="card-body">
+            <p class="hint">Salva nella cartella Download un file di testo che descrive cosa sta facendo l’app in questo momento: spazio occupato, velocità di lettura della cache, mappe offline, layer attivi e gli avvisi registrati dall’avvio. Serve quando qualcosa non va e non c’è modo di vedere perché. Il file contiene la tua posizione sulla mappa e gli URL dei layer attivi: guardalo prima di mandarlo a qualcuno.</p>
+            <button class="btn btn-secondary" id="btn-diag-report" style="width:100%">Salva il report diagnostico</button>
+          </div>
+        </div>
+      </div><!-- /panel-guide -->
+
+      <div id="toast-sidebar"></div>
+
+    </aside>
+
+    <!-- FLOATING TOOLS PANEL -->
+    <div id="map-tools" class="hidden">
+      <div class="mt-header">
+        <span class="mt-grip" title="Trascina">&#8942;&#8942;</span>
+        <button class="mt-tab active" data-mt="goto">Vai a</button>
+        <button class="mt-tab" data-mt="convert">Converti</button>
+        <button class="mt-close" id="map-tools-close" title="Chiudi">&#10005;</button>
+      </div>
+      <div class="mt-panel active" id="mt-goto">
+        <div class="field" style="position:relative">
+          <label>Coordinata o indirizzo</label>
+          <input type="text" id="goto-input" placeholder="lat,lon — MGRS — UTM — o indirizzo">
+        </div>
+        <button class="btn btn-primary btn-full" id="btn-goto">Go</button>
+      </div>
+      <div class="mt-panel" id="mt-convert">
+        <div class="field">
+          <label>Formato di partenza</label>
+          <select id="convert-from">
+            <option value="dd">Decimali (DD)</option>
+            <option value="dms">Gradi primi secondi (DMS)</option>
+            <option value="mgrs">MGRS &#8212; 32TPP1234512345</option>
+            <option value="utm">UTM &#8212; 32T 390000 4990000</option>
+          </select>
+        </div>
+        <div class="field">
+          <input type="text" id="convert-input" placeholder="Inserisci una coordinata&#8230;">
+        </div>
+        <button class="btn btn-primary btn-full" id="btn-convert">Converti</button>
+        <div class="result-box" id="convert-result"></div>
+      </div>
+    </div>
+
+    <!-- MAP (Leaflet basemap, WMS layers, vectors, draw) -->
+    <div id="map"></div>
+
+    <!-- NAVIGATION PANEL -->
+    <div id="nav-panel" class="hidden">
+      <div class="mt-header nav-drag-header">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:10px;flex-shrink:0;color:var(--accent)"><polygon points="3,11 22,2 13,21 11,13 3,11"/></svg>
+        <span style="flex:1;padding:9px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent)">Naviga</span>
+        <button class="mt-close" id="nav-close" title="Riduci">&#8722;</button>
+      </div>
+      <div style="padding:10px;display:flex;flex-direction:column;gap:8px">
+        <div class="field">
+          <label>Destinazione</label>
+          <div style="display:flex;gap:4px;position:relative">
+            <input type="text" id="nav-dest-input" placeholder="Indirizzo o scegli sulla mappa&#8230;" autocomplete="off" autocorrect="off" spellcheck="false" style="flex:1;min-width:0">
+            <button class="btn btn-secondary" id="nav-pick-btn" title="Scegli sulla mappa" style="padding:6px 10px;flex-shrink:0">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a8 8 0 0 1 8 8c0 5.25-8 14-8 14S4 15.25 4 10a8 8 0 0 1 8-8z"/><circle cx="12" cy="10" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn nav-profile-btn active" data-profile="driving" title="Auto" style="flex:1;padding:8px">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 17h2v-4a2 2 0 0 0-.59-1.41L17 8H7L3.59 11.59A2 2 0 0 0 3 13v4h2"/>
+              <circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/>
+              <path d="M5 13h14"/>
+            </svg>
+          </button>
+          <button class="btn nav-profile-btn" data-profile="walking" title="A piedi" style="flex:1;padding:8px">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="13" cy="3.5" r="1.5" fill="currentColor" stroke="none"/>
+              <line x1="13" y1="5" x2="11" y2="11"/>
+              <line x1="11" y1="8" x2="8.5" y2="6.5"/>
+              <line x1="11" y1="8" x2="14" y2="9.5"/>
+              <line x1="11" y1="11" x2="9" y2="17"/>
+              <line x1="11" y1="11" x2="13.5" y2="16"/>
+              <line x1="9" y1="17" x2="7" y2="18"/>
+              <line x1="13.5" y1="16" x2="15.5" y2="17"/>
+            </svg>
+          </button>
+          <button class="btn nav-profile-btn" data-profile="cycling" title="Bicicletta" style="flex:1;padding:8px">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="5.5" cy="17" r="3.5"/>
+              <circle cx="18.5" cy="17" r="3.5"/>
+              <path d="M5.5 17L12 13L18.5 17"/>
+              <path d="M12 13L14 9L18.5 13"/>
+              <line x1="12" y1="8" x2="16" y2="8"/>
+              <circle cx="12" cy="13" r="1.5" fill="currentColor" stroke="none"/>
+            </svg>
+          </button>
+        </div>
+        <button class="btn btn-primary btn-full" id="nav-start-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5,3 19,12 5,21"/></svg>
+          Avvia navigazione
+        </button>
+        <button class="btn btn-danger btn-full" id="nav-stop-btn" style="display:none">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+          Ferma navigazione
+        </button>
+        <button class="btn btn-secondary btn-full" id="nav-reset-btn" style="font-size:11px;padding:7px 8px" title="Reset navigazione">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          Reset navigazione
+        </button>
+        <button class="btn btn-secondary btn-full" id="nav-export-kml-btn" style="display:none;margin-top:4px" title="Esporta il percorso in KML (funziona offline)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+          Esporta percorso KML
+        </button>
+        <button class="btn btn-secondary btn-full" id="nav-save-draw-btn" style="display:none;margin-top:4px" title="Salva il percorso come disegno cliccabile">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          Salva percorso come disegno
+        </button>
+        <p class="hint" id="nav-status" style="margin:0;min-height:14px"></p>
+      </div>
+    </div>
+
+    <!-- SELECTION BADGE -->
+    <div id="sel-badge" class="hidden">
+      <button id="sel-mode-btn" title="Selezione con un tocco">&#x25CE; Seleziona</button>
+      <span id="sel-badge-count" style="display:none"></span>
+      <button id="sel-badge-export" style="display:none" title="Esporta le geometrie selezionate in KML nella cartella Download">&#11015; KML</button>
+      <button id="sel-badge-close" style="display:none" title="Deseleziona tutto">&#10005;</button>
+    </div>
+
+    <!-- KML EDIT BAR -->
+    <div id="kml-edit-bar" class="hidden">
+      <div id="kml-edit-main">
+        <span id="kml-edit-label">Modifica dei vertici KML</span>
+        <button id="kml-edit-save">&#10003; Salva</button>
+        <button id="kml-edit-cancel">&#10005; Annulla</button>
+      </div>
+      <div id="kml-edit-hint">trascina per spostare &middot; doppio tocco per eliminare &middot; trascina il punto intermedio per aggiungerne uno</div>
+    </div>
+
+    <!-- DISSOLVE NAME/DESC MODAL -->
+    <div id="dissolve-modal" class="hidden">
+      <div id="dissolve-modal-inner">
+        <div class="modal-title">Geometria dissolta</div>
+        <input id="dissolve-name-input" type="text" class="draw-desc-input" placeholder="Nome (obbligatorio)" style="margin-bottom:8px">
+        <input id="dissolve-desc-input" type="text" class="draw-desc-input" placeholder="Descrizione (facoltativa)">
+        <div class="modal-actions">
+          <button id="dissolve-modal-cancel" class="btn btn-secondary">Annulla</button>
+          <button id="dissolve-modal-ok" class="btn btn-success">&#10003; Salva KML</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- FLIGHT PANEL -->
+    <div id="flight-panel" class="hidden">
+      <div class="mt-header flight-drag-header">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="margin-left:10px;flex-shrink:0;color:var(--accent)"><path d="M21 16v-2l-8-5V3.5C13 2.67 12.33 2 11.5 2S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>
+        <span style="flex:1;padding:9px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent)">Volo</span>
+        <button class="mt-close" id="flight-collapse">&#8722;</button>
+      </div>
+      <div class="flight-grid">
+        <div class="flight-block">
+          <div class="flight-label">SPD</div>
+          <div class="flight-val" id="fp-spd">--</div>
+          <div class="flight-unit">km/h</div>
+        </div>
+        <div class="flight-block">
+          <div class="flight-label">AGL</div>
+          <div class="flight-val" id="fp-agl">--</div>
+          <div class="flight-unit">m</div>
+        </div>
+        <div class="flight-block">
+          <div class="flight-label">ALT</div>
+          <div class="flight-val" id="fp-alt">--</div>
+          <div class="flight-unit">m WGS84</div>
+        </div>
+        <div class="flight-block">
+          <div class="flight-label">HDG</div>
+          <div class="flight-val" id="fp-hdg">--</div>
+          <div class="flight-unit">deg</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- NAV FOLLOW BADGE -->
+    <div id="nav-follow-badge" class="hidden">
+      <button id="nav-follow-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
+        Ricentra
+      </button>
+    </div>
+
+    <!-- NAV HUD -->
+    <div id="nav-hud" class="hidden">
+      <div class="mt-header nav-hud-drag-header">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:10px;flex-shrink:0;color:var(--accent)"><polygon points="3,11 22,2 13,21 11,13 3,11"/></svg>
+        <span style="flex:1;padding:9px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent)">Navigazione</span>
+      </div>
+      <div class="nav-hud-grid">
+        <div class="flight-block">
+          <div class="flight-label">SPD</div>
+          <div class="flight-val" id="nh-spd">--</div>
+          <div class="flight-unit">km/h</div>
+        </div>
+        <div class="flight-block">
+          <div class="flight-label">DST</div>
+          <div class="flight-val" id="nh-dst">--</div>
+          <div class="flight-unit" id="nh-dst-unit">km</div>
+        </div>
+        <div class="flight-block">
+          <div class="flight-label">ETA</div>
+          <div class="flight-val" id="nh-eta">--</div>
+          <div class="flight-unit">min</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+
+  <!-- STATUS BAR -->
+  <div id="statusbar">
+    <button class="sb-arrow faded" id="sb-prev">&#8249;</button>
+    <div id="sb-scroll">
+      <div class="s-item"><span class="s-label">LAT</span><span class="s-val" id="sb-lat">--</span></div>
+      <div class="s-item"><span class="s-label">LON</span><span class="s-val" id="sb-lon">--</span></div>
+      <div class="s-item"><span class="s-label">DM</span><span class="s-val" id="sb-dm">--</span></div>
+      <div class="s-item"><span class="s-label">UTM</span><span class="s-val" id="sb-utm">--</span></div>
+      <div class="s-item"><span class="s-label">MGRS</span><span class="s-val" id="sb-mgrs">--</span></div>
+      <div class="s-item" id="sb-acc-item" style="display:none"><span class="s-label">ACC</span><span class="s-val" id="sb-acc">--</span></div>
+      <div class="s-item" id="sb-brg-item" style="display:none"><span class="s-label">HDG</span><span class="s-val" id="sb-brg">--</span></div>
+      <div class="s-item" id="sb-spd-item" style="display:none"><span class="s-label">SPD</span><span class="s-val" id="sb-spd">--</span></div>
+      <div class="s-item" id="sb-elev-item" style="display:none"><span class="s-label">ELEV</span><span class="s-val" id="sb-elev">--</span></div>
+      <div class="s-item"><span class="s-label">ZOOM</span><span class="s-val" id="zoom-level">6</span></div>
+      <div class="s-item"><span class="s-label">CRS</span><span class="s-val">WGS84</span></div>
+    </div>
+    <button class="sb-arrow" id="sb-next">&#8250;</button>
+  </div>
+
+</div><!-- /app -->
+
+<!-- ArcGIS credential modal -->
+<div id="modal-cred" class="modal-backdrop" style="display:none">
+  <div class="modal-box">
+    <h3>&#x1F512; Autenticazione richiesta</h3>
+    <p class="modal-desc">Questo servizio richiede l’autenticazione ArcGIS Online.<br>Le credenziali <strong>non vengono salvate</strong>.</p>
+    <p id="cred-service" class="modal-service"></p>
+    <div class="field">
+      <label>Utente ArcGIS</label>
+      <input type="text" id="cred-user" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="utente">
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="cred-pass" autocomplete="new-password" placeholder="&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;">
+    </div>
+    <p id="cred-error" class="hint" style="color:var(--danger);display:none"></p>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" id="cred-cancel">Annulla</button>
+      <button class="btn btn-primary"   id="cred-ok">Accedi</button>
+    </div>
+  </div>
+</div>
+
+<!-- About modal -->
+<div id="modal-about" class="modal-backdrop" style="display:none">
+  <div class="modal-box">
+    <div class="modal-about-header">
+      <img src="images/icon-512.png" alt="" width="36" height="36">
+      <div>
+        <div class="modal-about-title">GISCatasto</div>
+        <div class="modal-about-sub">GIS pensato per il lavoro sul campo</div>
+      </div>
+    </div>
+    <div>
+      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.1.9</span></div>
+      <div class="about-row"><span class="lbl">Autore</span><span class="val">Damiano Chiappa</span></div>
+      <div class="about-row"><span class="lbl">Licenza</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — software libero</a></span></div>
+      <div class="about-row"><span class="lbl">Tecnologia</span><span class="val">Leaflet · Cordova · Android</span></div>
+      <div class="about-row"><span class="lbl">Fonti</span><span class="val"><a href="#" id="about-credits-link">Attribuzioni e licenze</a></span></div>
+      <!-- Play's User Data policy wants the privacy policy reachable from inside the app, not
+           only from the store listing, for anything that touches location. Opens in the system
+           browser: allow-navigation is off, so an external URL cannot replace the app. -->
+      <div class="about-row"><span class="lbl">Privacy</span><span class="val"><a href="https://damianochiappa.github.io/GISCatasto/privacy/" target="_blank">Informativa</a></span></div>
+    </div>
+    <p class="modal-desc">App GIS utilizzabile senza rete: coordinate in MGRS/UTM/DD/DMS, disegno, registrazione tracce GPS, navigazione e download dei tile.</p>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" id="about-close">Chiudi</button>
+    </div>
+  </div>
+</div>
+
+<!-- Credits modal: the data sources whose terms require attribution, plus the libraries.
+     The map corner already credits the basemap in use; this collects them in one place. -->
+<div id="modal-credits" class="modal-backdrop" style="display:none">
+  <div class="modal-box modal-box-scroll">
+    <h3>Attribuzioni e licenze</h3>
+    <div class="credits-section">
+      <div class="credits-title">Fonti dei dati</div>
+      <div class="credits-row"><span class="who">Agenzia delle Entrate</span><span class="what">Cartografia catastale (WMS/WFS INSPIRE) — dati pubblici, condizioni del servizio</span></div>
+      <div class="credits-row"><span class="who">Geoportale Nazionale (PCN)</span><span class="what">Limiti amministrativi e ortofoto AGEA 2012 — dati pubblici</span></div>
+      <div class="credits-row"><span class="who">OpenStreetMap</span><span class="what">Mappa di base, ricerca indirizzi, percorsi — © contributori OpenStreetMap, ODbL</span></div>
+      <div class="credits-row"><span class="who">OpenTopoMap</span><span class="what">Mappa topografica — CC BY-SA</span></div>
+      <div class="credits-row"><span class="who">CARTO</span><span class="what">Mappe di base — condizioni CARTO</span></div>
+      <div class="credits-row"><span class="who">Esri e fornitori ArcGIS Online</span><span class="what">Mappa satellitare e tematiche — condizioni Esri</span></div>
+      <div class="credits-row"><span class="who">Open-Meteo</span><span class="what">Quota del terreno e meteo — CC BY 4.0</span></div>
+      <div class="credits-row"><span class="who">Regioni italiane</span><span class="what">Carte tecniche regionali (CTR) usate come mappa di base: Friuli-Venezia Giulia, Lazio, Liguria, Puglia, Sardegna, Sicilia, Toscana — dati aperti dei rispettivi geoportali</span></div>
+    </div>
+    <div class="credits-section">
+      <div class="credits-title">Librerie</div>
+      <p class="modal-desc">Leaflet (BSD-2) · leaflet-rotate (GPL-3.0) · Leaflet.draw (MIT) · Leaflet.PolylineMeasure (BSD-2) · Leaflet.FileLayer (MIT) · Esri Leaflet (Apache-2.0) · L.KML (MIT) · OpenLayers (BSD-2) · proj4js (MIT) · mgrs.js (MIT) · tokml (MIT) · toGeoJSON (BSD-2) · JSZip (MIT) · Turf.js (MIT)</p>
+    </div>
+    <div class="credits-section">
+      <div class="credits-title">Licenza dell'applicazione</div>
+      <p class="modal-desc">GISCatasto è software libero rilasciato sotto <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3</a>. Il codice sorgente della versione pubblicata è disponibile su <a href="https://github.com/damianochiappa/GISCatasto" target="_blank">GitHub</a>, come la licenza richiede.</p>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" id="credits-close">Chiudi</button>
+    </div>
+  </div>
+</div>
+
+<!-- Elevation profile modal -->
+<div id="modal-elev" class="modal-backdrop" style="display:none">
+  <div class="modal-box">
+    <h3>Profilo altimetrico</h3>
+    <div id="elev-chart-wrap"></div>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" id="elev-close">Chiudi</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- ===== SCRIPTS ===== -->
+<!-- Cordova: must be first -->
+<script src="cordova.js"></script>
+<!-- Leaflet core -->
+<script src="lib/leaflet.js"></script>
+<!-- Leaflet Rotate (map rotation + two-finger gesture) -->
+<script src="lib/leaflet-rotate.js"></script>
+<!-- ESRI Leaflet -->
+<script src="lib/esri-leaflet.js"></script>
+<!-- JSZip (KMZ) -->
+<script src="lib/jszip.min.js"></script>
+<!-- L.KML -->
+<script src="lib/L.KML.js"></script>
+<!-- toGeoJSON -->
+<script src="lib/togeojson.js"></script>
+<!-- Leaflet File Layer -->
+<script src="lib/leaflet.filelayer.js"></script>
+<!-- Polyline Measure -->
+<script src="lib/Leaflet.PolylineMeasure.js"></script>
+<!-- tokml -->
+<script src="lib/tokml.js"></script>
+<!-- turf -->
+<script src="lib/turf.min.js"></script>
+<!-- MGRS (UTM lives in js/utils.js, on proj4) -->
+<script src="lib/mgrs.js"></script>
+<!-- Leaflet Draw -->
+<script src="lib/leaflet-draw/Leaflet.draw.js"></script>
+<script src="lib/leaflet-draw/Leaflet.Draw.Event.js"></script>
+<script src="lib/leaflet-draw/Toolbar.js"></script>
+<script src="lib/leaflet-draw/Tooltip.js"></script>
+<script src="lib/leaflet-draw/ext/GeometryUtil.js"></script>
+<script src="lib/leaflet-draw/ext/LatLngUtil.js"></script>
+<script src="lib/leaflet-draw/ext/LineUtil.Intersect.js"></script>
+<script src="lib/leaflet-draw/ext/Polygon.Intersect.js"></script>
+<script src="lib/leaflet-draw/ext/Polyline.Intersect.js"></script>
+<script src="lib/leaflet-draw/ext/TouchEvents.js"></script>
+<script src="lib/leaflet-draw/draw/DrawToolbar.js"></script>
+<script src="lib/leaflet-draw/draw/handler/Draw.Feature.js"></script>
+<script src="lib/leaflet-draw/draw/handler/Draw.SimpleShape.js"></script>
+<script src="lib/leaflet-draw/draw/handler/Draw.Polyline.js"></script>
+<script src="lib/leaflet-draw/draw/handler/Draw.Marker.js"></script>
+<script src="lib/leaflet-draw/draw/handler/Draw.Circle.js"></script>
+<script src="lib/leaflet-draw/draw/handler/Draw.CircleMarker.js"></script>
+<script src="lib/leaflet-draw/draw/handler/Draw.Polygon.js"></script>
+<script src="lib/leaflet-draw/draw/handler/Draw.Rectangle.js"></script>
+<script src="lib/leaflet-draw/edit/EditToolbar.js"></script>
+<script src="lib/leaflet-draw/edit/handler/EditToolbar.Edit.js"></script>
+<script src="lib/leaflet-draw/edit/handler/EditToolbar.Delete.js"></script>
+<script src="lib/leaflet-draw/Control.Draw.js"></script>
+<script src="lib/leaflet-draw/edit/handler/Edit.Poly.js"></script>
+<script src="lib/leaflet-draw/edit/handler/Edit.SimpleShape.js"></script>
+<script src="lib/leaflet-draw/edit/handler/Edit.Rectangle.js"></script>
+<script src="lib/leaflet-draw/edit/handler/Edit.Marker.js"></script>
+<script src="lib/leaflet-draw/edit/handler/Edit.CircleMarker.js"></script>
+<script src="lib/leaflet-draw/edit/handler/Edit.Circle.js"></script>
+
+<!-- Service Worker -->
+<script>
+if ('serviceWorker' in navigator) {
+  const _hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (_hadController) location.reload(); });
+  window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => reg.update()).catch(() => {}); });
+}
+
+/* Safe mode: if the previous session was killed while tiles were still loading,
+   ask the SW to return 503 on cache misses for a few seconds so Leaflet shows
+   blanks instead of piling up hanging fetches that freeze the UI. */
+(function nvSafeMode() {
+  const FLAG = 'nv_tile_pending';
+  const SAFE_MS = 5000;
+  let _pending = 0;
+  window._nvTileStart = function() {
+    _pending++;
+    if (_pending === 1) { try { localStorage.setItem(FLAG, '1'); } catch(_){} }
+  };
+  window._nvTileEnd = function() {
+    _pending = Math.max(0, _pending - 1);
+    if (_pending === 0) { try { localStorage.removeItem(FLAG); } catch(_){} }
+  };
+  let wasKilled = false;
+  try { wasKilled = localStorage.getItem(FLAG) === '1'; } catch(_) {}
+  if (!wasKilled) return;
+  if (!navigator.serviceWorker || !navigator.serviceWorker.controller) {
+    try { localStorage.removeItem(FLAG); } catch(_){}
+    return;
+  }
+  try {
+    const ch = new MessageChannel();
+    navigator.serviceWorker.controller.postMessage(
+      { type: 'safeMode', until: Date.now() + SAFE_MS },
+      [ch.port2]
+    );
+  } catch(_) {}
+})();
+
+/* Cache-full consent prompt. When tile storage reaches its 4 GB budget (or the
+   device storage is nearly full), ask before freeing anything — freeing is no
+   longer silent (the old inline Service-Worker eviction stalled rendering) and
+   never touches a saved offline basemap by surprise.
+
+   Two caches exist: the VOLATILE cache (giscatasto-tiles-v1, tiles seen while
+   browsing) and one dedicated cache per saved offline basemap
+   (giscatasto-offline-*). Which action the prompt offers depends on WHERE the
+   space is going, sized from each basemap's tracked cfg.tiles count (no cache
+   enumeration → no UI freeze):
+     • Legacy branch — an offline map entry exists with NO dedicated cache (its
+       tiles are still mixed into the volatile cache, from a pre-refactor
+       version). Offer a one-time storage re-alignment: OK wipes the volatile
+       cache and drops the legacy entries (re-download needed); Cancel warns
+       that performance stays degraded and re-asks next launch.
+     • Phase 1 (offline maps < 3.5 GB) → the browsing tiles are the problem. OK
+       wipes the whole volatile cache (instant: one caches.delete); offline maps
+       are kept. If wiping doesn't clear the over-condition we stop nagging.
+     • Phase 2 (offline maps ≥ 3.5 GB) → the offline maps are the problem. OK
+       trims the oldest offline tiles down to 2.5 GB (~1 GB), oldest basemap
+       first; the maps stay listed but show gaps until re-downloaded.
+   Cancel defers for the session; the prompt returns at the next app start while
+   still over the limit.
+
+   The trigger uses navigator.storage.estimate() (cheap, read-only). It is a
+   privacy-quantized approximation, so it enforces the budget without ever being
+   an exact byte count. If estimate() is unavailable we do nothing (as before)
+   rather than enumerate caches on a timer. */
+window.addEventListener('load', function nvCacheFullInit() {
+  if (!window.caches || !navigator.storage || !navigator.storage.estimate) return;
+
+  const GB              = 1024 * 1024 * 1024;
+  const LIMIT_BYTES     = 4 * GB;         // prompt when tile storage reaches 4 GB
+  const FULL_RATIO      = 0.90;           // also prompt if origin usage ≥ 90% of quota
+  const OFFLINE_LIMIT   = 3.5 * GB;       // offline maps above this → Phase 2 (keeps volatile headroom)
+  const OFFLINE_TARGET  = 2.5 * GB;       // Phase 2 trims offline maps down to this
+  const AVG_TILE        = 15 * 1024;      // nominal tile size (bytes) for size/count estimates
+  const VOLATILE_CACHE  = 'giscatasto-tiles-v1';
+  const OFFLINE_PREFIX  = 'giscatasto-offline-';
+  const FIRST_CHECK_MS  = 10 * 1000;
+  const CHECK_INTERVAL_MS = 5 * 60 * 1000;
+
+  let _busy = false, _prompting = false;
+  // Per-session defer: a fresh page load (app restart) resets it, so a
+  // dismissed prompt reappears next launch while still over the limit.
+  let _deferred = false;
+  const toast = (m, t, d) => { if (typeof toastMsg === 'function') toastMsg(m, t || '', d); };
+
+  async function estimate() {
+    try {
+      const e = await navigator.storage.estimate();
+      if (e && e.usage) return { usage: e.usage, quota: e.quota || 0 };
+    } catch(_) {}
+    return null;
+  }
+  function isOver(m) {
+    return m.usage >= LIMIT_BYTES || (m.quota > 0 && (m.usage / m.quota) >= FULL_RATIO);
+  }
+
+  /* Byte budgets alone miss the case that actually hurts: the app turns sluggish
+     well below 4 GB, because every tile request goes through cache.match() on the
+     volatile cache (sw.js) and that lookup walks a disk-backed index whose cost
+     grows with the ENTRY COUNT. A fixed entry threshold would be the same mistake
+     as a fixed byte threshold, one step removed — the count a device stays fluid
+     at depends on its flash, its WebView and its free RAM, not on a number chosen
+     here. So measure the lookup on the device instead of declaring it.
+
+     The probe matches a key that cannot exist, which is the full-index path with
+     no data read. The baseline is the fastest probe ever seen on this device
+     (self-correcting: it drops again after a wipe). We report "slow" only when a
+     probe is both a large multiple of that baseline AND past an absolute floor,
+     so a fast device is never nagged over a few noisy milliseconds. The absolute
+     ceiling covers a cold start on an already-huge cache, where the baseline
+     would otherwise be recorded as slow and never trip the ratio. */
+  const PROBE_KEY      = '/__nv_cache_probe__';
+  const PROBE_BASE_KEY = 'nv_cache_probe_base';
+  /* Only the ratio is a real trigger, and it is the one that ports across
+     devices: it compares a device against ITS OWN best, so a phone whose healthy
+     lookup is 40 ms is judged by the same rule as one that does it in 2 ms.
+     The two absolute values bound it:
+       FLOOR — suppresses noise. It only ever binds on fast devices, where 4x a
+               sub-millisecond baseline is measurement jitter, not degradation.
+       CEIL  — a backstop for the one case the ratio cannot see: a first run on
+               an already-huge cache, where the baseline gets recorded slow and
+               nothing ever looks like a regression.
+
+     The cold-start false positive (a first, cold cache.match at boot read ~21 ms on
+     the BV4900Pro against a sub-ms warm baseline, tripping the old logic → prompt on a
+     healthy 389 MB cache) is handled by check()'s TWO-consecutive-slow gate, NOT by
+     inflating the floor: a cold spike shows at one check and is gone by the next, so it
+     never reaches the second hit. The floor stays at the validated noise level on
+     purpose — raising it would blind a FAST device to real entry-count accumulation,
+     which is exactly the slowdown the probe exists to catch (cache.match cost grows with
+     ENTRY COUNT / tile count, not bytes; a fast device climbing from ~1 ms to 15-30 ms
+     warm is that accumulation, not noise, and the byte budget won't see it until 4 GB).
+     CEIL and RATIO remain one-device estimates — recalibrate from the "Cache lookup"
+     section of Help > Save diagnostic report on slower hardware. */
+  const PROBE_FLOOR_MS = 15;    // noise floor only; cold-start transients are dropped by the 2-check gate, not by this value
+  const PROBE_RATIO    = 4;     // ... or this many times the device's own best
+  const PROBE_CEIL_MS  = 120;   // ... or slow in absolute terms, whatever the baseline
+  async function probeLookupMs() {
+    try {
+      const c = await caches.open(VOLATILE_CACHE);
+      const t0 = performance.now();
+      await c.match(new Request(PROBE_KEY), { ignoreVary: true });
+      return performance.now() - t0;
+    } catch(_) { return null; }
+  }
+  /* Field data (Android 12, empty cache) showed a single probe is too noisy to
+     decide on: five samples came back 1.6 / 3.3 / 2.5 / 2.8 / 13.5 ms. The 13.5
+     outlier against a 2.8 baseline is already a 4.8x "regression" that never
+     happened. It also showed the very first probe of a session reads cold — 55 ms
+     against a steady state under 3 ms — so taking it as the baseline poisons the
+     ratio for the whole install. Hence: discard the first sample, use the median
+     of the rest, and let every caller share this one path so the baseline is
+     maintained no matter who probes. */
+  async function probeMedian(n) {
+    await probeLookupMs();                 // warm-up, deliberately discarded
+    const runs = [];
+    for (let i = 0; i < (n || 3); i++) {
+      const ms = await probeLookupMs();
+      if (ms != null) runs.push(ms);
+    }
+    if (!runs.length) return null;
+    runs.sort((a, b) => a - b);
+    return runs[Math.floor(runs.length / 2)];
+  }
+
+  async function isSlow() {
+    const ms = await probeMedian(3);
+    window._nvLastProbeMs = ms;
+    if (ms == null) return false;
+    let base = parseFloat(localStorage.getItem(PROBE_BASE_KEY));
+    if (!isFinite(base) || ms < base) {
+      base = ms;
+      try { localStorage.setItem(PROBE_BASE_KEY, String(base)); } catch(_) {}
+    }
+    // Record every sample: a single reading says little, the trend across a
+    // session is what shows the cache degrading. Cheap (one line in a capped
+    // buffer) and it is what makes the exported report worth reading.
+    if (typeof nvLog === 'function') {
+      nvLog('cache probe', ms.toFixed(1) + 'ms', 'baseline', base.toFixed(1) + 'ms',
+            'ratio', (ms / (base || 1)).toFixed(1) + 'x');
+    }
+    if (ms >= PROBE_CEIL_MS) return true;
+    return ms >= PROBE_FLOOR_MS && ms >= base * PROBE_RATIO;
+  }
+  /* Exposed for the Help > diagnostic report. It gets the median path, not the
+     raw one: the report used to sample probeLookupMs directly, which never
+     touched the stored baseline — so a report could show a 55 ms "best ever"
+     next to a 2.8 ms current reading and no ratio would ever be right again. */
+  window._nvCacheProbe = () => probeMedian(3);
+  window._nvCacheSlowCheck = isSlow;
+  window._nvCacheProbeBaseKey = PROBE_BASE_KEY;
+  window._nvVolatileCache = VOLATILE_CACHE;
+  window._nvOfflinePrefix = OFFLINE_PREFIX;
+  function offlineCfgs() {
+    return (typeof customMapConfigs !== 'undefined' ? customMapConfigs : []).filter(c => c && c.offline);
+  }
+  // Names of existing dedicated offline caches (cheap: names only, no tiles).
+  async function offlineCacheNames() {
+    try { return (await caches.keys()).filter(n => n.startsWith(OFFLINE_PREFIX)); } catch(_) { return []; }
+  }
+  // Oldest first — the id timestamp (offline_<ts>) is embedded in the name.
+  function sortByAge(names) {
+    return names
+      .map(n => ({ name: n, id: n.slice(OFFLINE_PREFIX.length), ts: parseInt((n.split('_').pop() || '0'), 10) || 0 }))
+      .sort((a, b) => a.ts - b.ts);
+  }
+  function notifySW() {
+    try {
+      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'offlineChanged' });
+      }
+    } catch(_) {}
+  }
+  function decCfgTiles(id, n) {
+    try {
+      if (typeof customMapConfigs === 'undefined') return;
+      const cfg = customMapConfigs.find(c => c.id === id);
+      if (cfg) cfg.tiles = Math.max(0, (cfg.tiles || 0) - n);
+      if (typeof _autoSaveConfig === 'function') _autoSaveConfig();
+    } catch(_) {}
+  }
+
+  /* Phase 1: wipe every tile NOT in a saved offline basemap. Instant (one delete). */
+  async function wipeVolatile() {
+    try { return await caches.delete(VOLATILE_CACHE); } catch(_) { return false; }
+  }
+
+  /* Phase 2: delete the oldest offline tiles (oldest basemap first, oldest tile
+     first within it) — count-based on the tracked cfg.tiles so it needs no cache
+     enumeration. Decrements cfg.tiles as it goes. Entries stay in the list
+     (gaps until re-downloaded). */
+  async function freeOldestOffline(tilesToFree) {
+    let remaining = Math.max(0, tilesToFree | 0);
+    let total = 0;
+    for (const { name, id } of sortByAge(await offlineCacheNames())) {
+      if (remaining <= 0) break;
+      let c, keys;
+      try { c = await caches.open(name); keys = await c.keys(); } catch(_) { continue; }
+      let del = 0;
+      for (let i = 0; i < keys.length && remaining > 0; i++) {
+        try { await c.delete(keys[i]); del++; remaining--; } catch(_) {}
+      }
+      if (del) { decCfgTiles(id, del); total += del; }
+    }
+    if (total) notifySW();
+    return total;
+  }
+
+  async function handleOver(m, reason) {
+    _busy = true;
+    try {
+      const names = await offlineCacheNames();
+      const nameSet = new Set(names);
+      const cfgs = offlineCfgs();
+
+      // ── Legacy branch: offline maps saved by an older version have no dedicated
+      //    cache (their tiles are mixed into the volatile cache). Offer a one-time
+      //    storage re-alignment before the normal prompts.
+      const legacy = cfgs.filter(c => !nameSet.has(OFFLINE_PREFIX + c.id));
+      if (legacy.length) {
+        _prompting = true;
+        const ok = confirm(
+          'Some of your saved maps use an older storage format that can slow the app down.\n\n' +
+          'Tap OK to clean it up now — your offline map areas will need to be downloaded again, but the app will run faster and manage space better.\n\n' +
+          'Tap Cancel to do it later: the app may stay slow, and we’ll ask again the next time you open it.'
+        );
+        _prompting = false;
+        if (!ok) { _deferred = true; return; }
+        await wipeVolatile();
+        legacy.forEach(c => { if (typeof window._nvPurgeOffline === 'function') window._nvPurgeOffline(c.id); });
+        notifySW();
+        toast('Old cache cleared — re-download your offline maps to save them', 'success', 6000);
+        return;
+      }
+
+      // Size the offline maps from tracked tile counts — no enumeration, no freeze.
+      let offlineTiles = 0;
+      cfgs.forEach(c => { if (nameSet.has(OFFLINE_PREFIX + c.id)) offlineTiles += (c.tiles || 0); });
+      const phase2 = (offlineTiles * AVG_TILE) >= OFFLINE_LIMIT;
+      if (typeof nvLog === 'function') {
+        nvLog('cache prompt', 'reason=' + reason, 'offlineCfgs=' + cfgs.length,
+              'offlineCaches=' + names.length, 'offlineTiles=' + offlineTiles,
+              'sized=' + (offlineTiles * AVG_TILE / (1024 * 1024 * 1024)).toFixed(2) + 'GB',
+              '-> phase' + (phase2 ? 2 : 1));
+      }
+
+      _prompting = true;
+      let ok;
+      if (!phase2) {
+        ok = confirm(
+          (reason === 'slow'
+            ? 'The map cache has grown big enough to slow the app down.\n\n'
+            : 'The map cache is full (4 GB).\n\n') +
+          'Tap OK to free space and keep things fast — this clears only the tiles saved automatically while browsing; your downloaded offline maps are kept.\n\n' +
+          'Tap Cancel to decide later (we’ll remind you next time you open the app).\n\n' +
+          'Seeing this often? Your offline maps may be taking the space — remove one with its ✕, or clear everything from the Cache tab.'
+        );
+      } else {
+        ok = confirm(
+          'Your downloaded offline maps have filled the storage (4 GB).\n\n' +
+          'Tap OK to remove about 1 GB of the oldest offline tiles — the maps stay in your list, but some areas may need downloading again.\n\n' +
+          'Tap Cancel to keep them for now (we’ll remind you next time you open the app).'
+        );
+      }
+      _prompting = false;
+      if (!ok) { _deferred = true; return; }
+
+      if (!phase2) {
+        const wiped = await wipeVolatile();
+        toast(wiped ? 'Browsing cache cleared' : 'Nothing to clear', wiped ? 'success' : '', 5000);
+        // If wiping the whole volatile cache didn't clear the condition that
+        // triggered us, the pressure isn't the browsing cache — stop nagging
+        // until the next launch. Re-test whichever condition actually fired.
+        if (reason === 'slow') {
+          if (await isSlow()) _deferred = true;
+        } else {
+          const after = await estimate();
+          if (after && isOver(after)) _deferred = true;
+        }
+      } else {
+        const tilesToFree = Math.max(1, offlineTiles - Math.floor(OFFLINE_TARGET / AVG_TILE));
+        const n = await freeOldestOffline(tilesToFree);
+        toast(n ? ('Freed offline tiles (' + n.toLocaleString() + ')') : 'Nothing to free', n ? 'success' : '', 6000);
+      }
+    } catch(_) {
+    } finally { _busy = false; }
+  }
+
+  // Consecutive-slow gate: the 'slow' verdict must hold across two checks before we
+  // prompt. A cold-start transient (first cache access after launch reads slow, then
+  // settles within seconds) sets the streak to 1, and by the next check the cache is
+  // warm again → reset, no dialog. A real degradation stays slow across checks → fires.
+  // The byte-budget 'full' path is NOT gated: it is not transient and stays immediate.
+  let _slowStreak = 0;
+  async function check() {
+    if (_busy || _prompting || _deferred) return;
+    const m = await estimate();
+    if (!m) return;
+    // Byte budget first (cheap, no cache IO); only probe the lookup if we are
+    // still under it, so the common healthy case costs one estimate() call.
+    if (isOver(m)) return void await handleOver(m, 'full');
+    if (await isSlow()) {
+      if (++_slowStreak >= 2) { _slowStreak = 0; await handleOver(m, 'slow'); }
+    } else {
+      _slowStreak = 0;
+    }
+  }
+
+  setTimeout(check, FIRST_CHECK_MS);
+  setInterval(check, CHECK_INTERVAL_MS);
+});
+</script>
+
+<!-- proj4 + OpenLayers (WFS GML reader — must load before app scripts) -->
+<script src="lib/proj4.js"></script>
+<script src="lib/ol.js"></script>
+
+<!-- App scripts (load order matters) -->
+<script src="js/utils.js"></script>
+<script src="js/map.js"></script>
+<script src="js/basemaps-private.js" onerror="void(0)"></script>
+<script src="js/layers.js"></script>
+<script src="js/draw.js"></script>
+<script src="js/tools.js"></script>
+<script src="js/elevation.js"></script>
+<script src="js/navigation.js"></script>
+<script src="js/compass.js"></script>
+<script src="js/offline.js"></script>
+<script src="js/cadaster-wizard.js"></script>
+
+</body>
+</html>

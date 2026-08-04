@@ -1,0 +1,46 @@
+# Build artifacts
+output/
+*.apk
+*.aab
+*.idsig
+
+# Signing material — must never reach a public repository. None of these exist in the
+# tree today; the rules are here so that a keystore dropped in by mistake, or a
+# key.properties written by a future signing setup, cannot be committed by an "add -A".
+*.keystore
+*.jks
+*.p12
+*.pepk
+key.properties
+keystore.properties
+signing.properties
+local.properties
+
+# Private basemap overrides (local tile provider URLs — not for distribution)
+app/js/basemaps-private.js
+
+# Cordova generated (recreated by build)
+platforms/
+plugins/cordova-plugin-advanced-http/
+plugins/cordova-plugin-geolocation/
+plugins/cordova-plugin-android-permissions/
+plugins/cordova-plugin-file/
+plugins/fetch.json
+plugins/android.json
+node_modules/
+package-lock.json
+
+# Gradle / build cache
+.gradle/
+build/
+*.log
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+*.orig
+*.rej

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext HTTP is denied by default. The single exception is the PCN administrative-boundaries
+  WFS: that host 301-redirects HTTPS to HTTP, and cordova-plugin-advanced-http refuses the
+  downgrade, so the cadastre wizard would lose its region/province/comune cascade without it.
+  Every other endpoint the app ships with is HTTPS and validates against the system CA store.
+  User-added WMS/WFS servers are therefore HTTPS-only; add a domain-config entry here if a
+  cleartext-only source ever has to be supported.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">wms.pcn.minambiente.it</domain>
+    </domain-config>
+
+    <!--
+      The app shell itself. config.xml sets scheme=http, so Cordova serves the bundled assets
+      from http://localhost/ and the WebView consults this policy for that origin too — with
+      cleartext denied the app would not load at all. Nothing leaves the device on this origin:
+      the request is answered by Cordova's asset loader, no socket is opened.
+      Why the origin is http and not https: the national orthophoto is HTTP-only (its HTTPS
+      301-redirects to HTTP, WMS path included) and Leaflet loads tiles as <img>, which an
+      https:// page refuses as mixed content. Every other host stays bound by base-config.
+    -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+
+    <!--
+      The Agenzia Entrate WMS host serves a chain ending in "Sectigo Public Server Authentication
+      Root R46", which is self-signed and absent from the CA store of older Android releases
+      (verified on Android 12: 125 roots, USERTrust and COMODO present, R46 not). Every cadastral
+      WMS overlay therefore failed with SSLException — plugin status -2 — once certificate
+      validation was switched back on.
+      The WFS host on the same domain is unaffected: its Let's Encrypt root is cross-signed by
+      ISRG Root X1, which those devices do have, so the path still closes.
+      Bundling the root is additive, not a bypass: "system" stays first, so any future chain the
+      device already trusts keeps working, and the extra anchor is scoped to this domain alone.
+      The file is the copy shipped by the distribution's ca-certificates package, not one scraped
+      from the server being validated; SHA-256 fingerprint checked against it:
+      7B:B6:47:A6:2A:EE:AC:88:BF:25:7A:A5:22:D0:1F:FE:A3:95:E0:AB:45:C7:3F:93:F6:56:54:EC:38:F2:5A:06
+    -->
+    <domain-config>
+        <domain includeSubdomains="true">cartografia.agenziaentrate.gov.it</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/sectigo_r46" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

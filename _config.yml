@@ -1,0 +1,23 @@
+title: GISCatasto
+description: App Android per consultare la cartografia catastale italiana sul campo — particelle e fogli dai servizi INSPIRE dell'Agenzia delle Entrate, mappe salvabili per l'uso senza connessione, export KML.
+url: https://damianochiappa.github.io
+baseurl: /GISCatasto
+lang: it_IT
+
+plugins:
+  - jekyll-sitemap
+  - jekyll-seo-tag
+
+keywords: catasto, particelle catastali, foglio, GIS, WFS, WMS, INSPIRE, Agenzia delle Entrate, cartografia, offline, KML, UTM, MGRS, Android
+
+exclude:
+  - apk/
+  - app/
+  - src/
+  - output/
+
+defaults:
+  - scope:
+      path: "google*.html"
+    values:
+      sitemap: false

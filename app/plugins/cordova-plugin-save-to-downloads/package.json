@@ -1,0 +1,16 @@
+{
+  "name": "cordova-plugin-save-to-downloads",
+  "version": "1.0.0",
+  "description": "Save files to the Android Downloads folder via MediaStore",
+  "cordova": {
+    "id": "cordova-plugin-save-to-downloads",
+    "platforms": ["android"]
+  },
+  "keywords": ["cordova", "android", "downloads"],
+  "engines": {
+    "cordovaDependencies": {
+      "1.0.0": { "cordova-android": ">=10.0.0" }
+    }
+  },
+  "license": "MIT"
+}

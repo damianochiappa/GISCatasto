@@ -1,0 +1,100 @@
+<?xml version='1.0' encoding='utf-8'?>
+<widget id="it.geotool.giscatasto" version="1.1.9"
+    xmlns="http://www.w3.org/ns/widgets"
+    xmlns:cdv="http://cordova.apache.org/ns/1.0"
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <name>GISCatasto</name>
+  <description>GIS da campo per la consultazione catastale, con cartografia offline</description>
+  <author>Damiano Chiappa</author>
+
+  <content src="geoapp.html" />
+
+  <hook type="after_prepare" src="hooks/after_prepare/fix_splash.js" />
+
+  <!-- SslPlugin NON dichiarato: era una feature senza .java corrispondente, e su un
+       progetto Cordova nuovo il prepare fallisce invece di ignorarla. Rimosso anche
+       l'hook ssl_handler.js (2026-08-03), che era un no-op non piu' referenziato da qui:
+       la fiducia TLS e' gestita a runtime da cordova-plugin-advanced-http e, per la CA
+       mancante dell'Agenzia, da res/xml/network_security_config.xml. -->
+
+  <access origin="*" />
+  <allow-intent href="http://*/*" />
+  <allow-intent href="https://*/*" />
+  <!-- allow-navigation rimosso 2026-08-01: consentiva a qualunque URL di sostituire l'app
+       dentro la WebView, con il bridge Cordova (GPS, file) esposto alla pagina caricata.
+       Verificato che nessuno lo usa: nel codice non c'e' window.open, location.href =, ne'
+       location.assign. L'unico link esterno e' la licenza GPL con target="_blank", che passa
+       dalle allow-intent qui sopra e si apre nel browser di sistema. -->
+
+ <platform name="android">
+    <!-- targetSdk 36: requisito Play per le app nuove dal 31/08/2026. Verificato
+         compilabile su questo device con cordova-android 15.1.0 (2026-07-30). -->
+    <preference name="android-targetSdkVersion" value="36" />
+
+    <allow-intent href="market:*" />
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- READ/WRITE_EXTERNAL_STORAGE rimossi 2026-08-01: con targetSdk 36 sono inerti
+         (erano gia' limitati a maxSdkVersion 32 e 29) e Play li segnala come permessi
+         sensibili dichiarati senza motivo. L'app scrive tramite SAF/cordova-plugin-file
+         nella sua area, che non richiede permessi. -->
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+
+    <!-- Icona default (fallback): usata sotto API 26, dove nessuna maschera viene
+         applicata e la placca squircle disegnata nel bitmap e' la resa corretta. -->
+    <icon src="www/images/icon-512.png" />
+    <!-- Da API 26 in su l'icona e' adattiva: due livelli su tela 108dp, la sagoma la
+         decide il launcher. Il bitmap legacy qui sopra aveva placca e cornice inset
+         disegnate dentro, che la maschera tonda tagliava. -->
+    <icon density="mdpi"    background="res/icon/ic-bg-mdpi.png"    foreground="res/icon/ic-fg-mdpi.png" />
+    <icon density="hdpi"    background="res/icon/ic-bg-hdpi.png"    foreground="res/icon/ic-fg-hdpi.png" />
+    <icon density="xhdpi"   background="res/icon/ic-bg-xhdpi.png"   foreground="res/icon/ic-fg-xhdpi.png" />
+    <icon density="xxhdpi"  background="res/icon/ic-bg-xxhdpi.png"  foreground="res/icon/ic-fg-xxhdpi.png" />
+    <icon density="xxxhdpi" background="res/icon/ic-bg-xxxhdpi.png" foreground="res/icon/ic-fg-xxxhdpi.png" />
+
+<preference name="AndroidPersistentFileLocation" value="Compatibility" />
+
+    <resource-file src="res/xml/network_security_config.xml" target="app/src/main/res/xml/network_security_config.xml" />
+    <resource-file src="res/raw/sectigo_r46.pem" target="app/src/main/res/raw/sectigo_r46.pem" />
+
+    <edit-config file="app/src/main/AndroidManifest.xml" target="/manifest/application" mode="merge">
+      <application android:networkSecurityConfig="@xml/network_security_config" />
+    </edit-config>
+  </platform>
+
+  <preference name="SplashScreenDelay" value="0" />
+  <preference name="AutoHideSplashScreen" value="true" />
+  <preference name="DisallowOverscroll" value="true" />
+  <preference name="StatusBarBackgroundColor" value="#0f1117" />
+  <preference name="StatusBarStyle" value="lightcontent" />
+  <preference name="Orientation" value="user" />
+  <preference name="EnableViewportScale" value="false" />
+  <!-- Inert, kept only so nobody re-adds it expecting an effect: cordova-android does not read
+       this preference. There is not a single occurrence of "mixedcontent" in CordovaLib and
+       nothing calls setMixedContentMode(), so the WebView default MIXED_CONTENT_NEVER_ALLOW
+       always applies and no value here can change it. That default is what the scheme below
+       has to work around. -->
+  <preference name="MixedContentAllowed" value="false" />
+  <preference name="GeoLocationEnabled" value="true" />
+  <preference name="AndroidInsecureFileModeEnabled" value="false" />
+  <!-- http, not https, and it is deliberate. The national orthophoto (PCN/AGEA) is HTTP-only:
+       its HTTPS endpoint 301-redirects to HTTP, WMS path included (re-verified 2026-08-03).
+       Leaflet loads tiles as images and the offline downloader with fetch(), both from the app
+       page — served from an https://localhost origin those are mixed content and the WebView
+       drops them silently: no error, no image. An http://localhost origin has no such rule.
+       What this does NOT weaken: localhost stays a secure context in Chromium, so geolocation,
+       the service worker and crypto keep working; and cleartext towards the network is still
+       gated per-domain by res/xml/network_security_config.xml, which denies every host except
+       the one PCN endpoint. That file is the real gate — this is only the page's own origin,
+       answered by Cordova's asset loader without opening a socket.
+       Changing this changes the origin, so localStorage/IndexedDB/Cache Storage start empty. -->
+  <preference name="scheme" value="http" />
+  <preference name="hostname" value="localhost" />
+  <preference name="CacheMode" value="LOAD_NO_CACHE" />
+  <preference name="loadUrlTimeoutValue" value="60000" />
+
+</widget>
