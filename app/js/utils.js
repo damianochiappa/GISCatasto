@@ -216,7 +216,7 @@ function showPromptModal(message, defaultValue, onConfirm, hint) {
         '<div class="field"><input type="text" id="prompt-modal-input" autocomplete="off" autocorrect="off" spellcheck="false"></div>' +
         '<p class="hint" id="prompt-modal-hint" style="margin:2px 0 10px;display:none"></p>' +
         '<div class="modal-btns">' +
-          '<button class="btn btn-secondary" id="prompt-modal-cancel">Cancel</button>' +
+          '<button class="btn btn-secondary" id="prompt-modal-cancel">Annulla</button>' +
           '<button class="btn btn-primary" id="prompt-modal-ok">OK</button>' +
         '</div>' +
       '</div>';
@@ -255,15 +255,15 @@ function showFilterEditModal(currentAttr, currentVals, onConfirm) {
     modal.className = 'modal-backdrop';
     modal.innerHTML =
       '<div class="modal-box">' +
-        '<p style="margin-bottom:12px;font-size:13px;line-height:1.5">Edit WFS filter</p>' +
-        '<div class="field"><label>Filter attribute</label>' +
-          '<input type="text" id="filter-edit-attr" placeholder="e.g. CODICE" autocomplete="off" autocorrect="off" spellcheck="false"></div>' +
-        '<div class="field"><label>Filter values</label>' +
-          '<input type="text" id="filter-edit-vals" placeholder="e.g. MIL* or A001,B002" autocomplete="off" autocorrect="off" spellcheck="false">' +
-          '<p class="hint" style="margin:3px 0 0">Use <code>*</code> and <code>?</code> wildcards (e.g. <code>MIL*</code>), or comma-separated exact values. Empty both = clear filter.</p></div>' +
+        '<p style="margin-bottom:12px;font-size:13px;line-height:1.5">Modifica il filtro WFS</p>' +
+        '<div class="field"><label>Attributo del filtro</label>' +
+          '<input type="text" id="filter-edit-attr" placeholder="es. CODICE" autocomplete="off" autocorrect="off" spellcheck="false"></div>' +
+        '<div class="field"><label>Valori del filtro</label>' +
+          '<input type="text" id="filter-edit-vals" placeholder="es. MIL* oppure A001,B002" autocomplete="off" autocorrect="off" spellcheck="false">' +
+          '<p class="hint" style="margin:3px 0 0">Puoi usare i caratteri jolly <code>*</code> e <code>?</code> (per esempio <code>MIL*</code>) oppure valori esatti separati da virgola. Lasciando vuoti entrambi i campi, il filtro viene tolto.</p></div>' +
         '<div class="modal-btns">' +
-          '<button class="btn btn-secondary" id="filter-edit-cancel">Cancel</button>' +
-          '<button class="btn btn-primary" id="filter-edit-ok">Save</button>' +
+          '<button class="btn btn-secondary" id="filter-edit-cancel">Annulla</button>' +
+          '<button class="btn btn-primary" id="filter-edit-ok">Salva</button>' +
         '</div>' +
       '</div>';
     document.body.appendChild(modal);
@@ -340,14 +340,14 @@ function showSavePathModal(path) {
   modal.innerHTML = `
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
                 padding:20px;max-width:400px;width:100%;box-shadow:var(--shadow)">
-      <div style="font-weight:700;margin-bottom:10px;color:var(--success);font-size:15px">File saved</div>
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Path:</div>
+      <div style="font-weight:700;margin-bottom:10px;color:var(--success);font-size:15px">File salvato</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Percorso:</div>
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;
                   padding:10px;font-size:12px;word-break:break-all;color:var(--text);
                   font-family:monospace;margin-bottom:14px">${path}</div>
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">
-        Open <b>Files by Google</b> (or any file manager)&nbsp;&rarr;<br>
-        <span style="color:var(--accent)">Browse &rarr; Android &rarr; data &rarr; com.geotool.app &rarr; files</span>
+        Apri <b>Files</b> di Google (o un altro gestore di file)&nbsp;&rarr;<br>
+        <span style="color:var(--accent)">Sfoglia &rarr; Android &rarr; data &rarr; com.geotool.giscatasto &rarr; files</span>
       </div>
       <button onclick="document.getElementById('save-path-modal').style.display='none'"
               style="background:var(--accent);color:#fff;border:none;border-radius:var(--r);

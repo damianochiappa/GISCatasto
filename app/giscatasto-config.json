@@ -206,7 +206,7 @@
       "id": "custom_ws_21",
       "type": "wms_tiles",
       "url": "https://irdat.regione.fvg.it/geoserver/wms",
-      "name": "CTR Friuli-Venezia Giulia 5k",
+      "name": "CTR Friuli-Venezia Giulia 5k (da zoom 16)",
       "group": "regionale",
       "wmsParams": {
         "layers": "TER_AMB:CTRN5KColore",
@@ -216,13 +216,14 @@
         "bgcolor": "0xFFFFFF"
       },
       "maxZoom": 20,
-      "protected": false
+      "protected": false,
+      "minZoom": 16
     },
     {
       "id": "custom_ws_22",
       "type": "wms_tiles",
       "url": "https://geoportale.regione.lazio.it/geoserver/wms",
-      "name": "CTR Lazio 2020 5k",
+      "name": "CTR Lazio 2020 5k (da zoom 17)",
       "group": "regionale",
       "wmsParams": {
         "layers": "geonode:ctr_5k_2020",
@@ -232,7 +233,8 @@
         "bgcolor": "0xFFFFFF"
       },
       "maxZoom": 20,
-      "protected": false
+      "protected": false,
+      "minZoom": 17
     },
     {
       "id": "custom_ws_23",
@@ -255,7 +257,7 @@
       "id": "custom_ws_24",
       "type": "wms_tiles",
       "url": "https://webapps.sit.puglia.it/arcgis/services/Background/CTR2008/MapServer/WMSServer",
-      "name": "CTR Puglia 2008",
+      "name": "CTR Puglia 2008 (da zoom 15)",
       "group": "regionale",
       "wmsParams": {
         "layers": "3",
@@ -265,13 +267,14 @@
         "bgcolor": "0xFFFFFF"
       },
       "maxZoom": 20,
-      "protected": false
+      "protected": false,
+      "minZoom": 15
     },
     {
       "id": "custom_ws_25",
       "type": "wms_tiles",
       "url": "https://webgis2.regione.sardegna.it/geoserverraster/ows",
-      "name": "CTR Sardegna 1994-2000",
+      "name": "CTR Sardegna 1994-2000 (da zoom 17)",
       "group": "regionale",
       "wmsParams": {
         "layers": "raster:CTR_1994_2000_GB",
@@ -281,13 +284,14 @@
         "bgcolor": "0xFFFFFF"
       },
       "maxZoom": 20,
-      "protected": false
+      "protected": false,
+      "minZoom": 17
     },
     {
       "id": "custom_ws_26",
       "type": "wms_tiles",
       "url": "https://map.sitr.regione.sicilia.it/gis/services/ctr_10000/ctr_2013_base/MapServer/WMSServer",
-      "name": "CTR Sicilia 2012-2013",
+      "name": "CTR Sicilia 2012-2013 (da zoom 16)",
       "group": "regionale",
       "wmsParams": {
         "layers": "1",
@@ -297,13 +301,14 @@
         "bgcolor": "0xFFFFFF"
       },
       "maxZoom": 20,
-      "protected": false
+      "protected": false,
+      "minZoom": 16
     },
     {
       "id": "custom_ws_27",
       "type": "wms_tiles",
       "url": "https://www502.regione.toscana.it/ows_ctr/com.rt.wms.RTmap/ows?map=owsctr",
-      "name": "CTR Toscana 10k",
+      "name": "CTR Toscana 10k (da zoom 17)",
       "group": "regionale",
       "wmsParams": {
         "layers": "rt_ctr.10k",
@@ -313,7 +318,8 @@
         "bgcolor": "0xFFFFFF"
       },
       "maxZoom": 20,
-      "protected": false
+      "protected": false,
+      "minZoom": 17
     }
   ],
   "sslExceptions": [

@@ -10,6 +10,19 @@ disponibili senza connessione**.
 
 [![Licenza: GPL v3](https://img.shields.io/badge/Licenza-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
+## Dove si scarica
+
+L'app è in **test chiuso** su Google Play: la pubblicazione aperta arriva al termine del periodo di
+prova richiesto dallo store.
+
+<!-- Alla pubblicazione, sostituire il paragrafo qui sopra con il badge ufficiale, che va in questa
+     posizione — sopra la piega, prima della descrizione:
+[![Disponibile su Google Play](https://play.google.com/intl/en_us/badges/static/images/badges/it_badge_web_generic.png)](https://play.google.com/store/apps/details?id=com.geotool.giscatasto)
+     Regole del marchio: usare il badge fornito da Google senza modificarlo ne' ritagliarlo. -->
+
+Nel frattempo il codice sorgente è pubblico, come richiede la licenza:
+**[github.com/damianochiappa/GISCatasto](https://github.com/damianochiappa/GISCatasto)**
+
 ---
 
 ## A cosa serve

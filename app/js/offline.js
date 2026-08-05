@@ -101,9 +101,9 @@
       yMin: _latToY(bounds.getNorth(), z), yMax: _latToY(bounds.getSouth(), z)
     };
   }
-  function _countTiles(bounds, maxZ) {
+  function _countTiles(bounds, maxZ, minZ) {
     let n = 0;
-    for (let z = 1; z <= maxZ; z++) {
+    for (let z = minZ || 1; z <= maxZ; z++) {
       const r = _range(bounds, z);
       n += (r.xMax - r.xMin + 1) * (r.yMax - r.yMin + 1);
     }
@@ -256,11 +256,11 @@
      Strategy: try CORS first (readable response); on failure try no-cors
      (opaque response — browser can still render it as an <img> src).
      All zoom levels 1..maxZoom for the same extent are included. */
-  async function _downloadMissing(bounds, maxZoom, mapId, cachedSet, destCache, volatileCache) {
+  async function _downloadMissing(bounds, maxZoom, mapId, cachedSet, destCache, volatileCache, minZoom) {
     const cache = destCache;
 
     const pending = [];
-    for (let z = 1; z <= maxZoom; z++) {
+    for (let z = minZoom || 1; z <= maxZoom; z++) {
       const r = _range(bounds, z);
       for (let x = r.xMin; x <= r.xMax; x++) {
         for (let y = r.yMin; y <= r.yMax; y++) {
@@ -340,6 +340,11 @@
     if (!entry) { toastMsg('Mappa non trovata', 'error', undefined, 'sidebar'); return; }
     if (_offlineBlocked(entry)) { toastMsg('Questa mappa non è scaricabile: il fornitore vieta il download massivo dei tile.', 'error', undefined, 'sidebar'); return; }
     maxZoom = Math.min(maxZoom, (entry.options && entry.options.maxZoom) || 18, 18);
+    /* Never below the source's own minZoom. A regional technical map draws nothing outside
+       its design scale, and the server answers those requests with an empty image — which
+       lands in the cache as a black tile and is then served offline as if it were the map.
+       Online the layer's minZoom hides the problem; the downloader used to ignore it. */
+    const _minZ = Math.max(1, (entry.options && entry.options.minZoom) || 1);
 
     // The bundled providers that used to raise this are now blocked outright, so whatever
     // is still selectable is a source the user added: we cannot know its terms, and the
@@ -352,7 +357,7 @@
       }
     }
 
-    const total  = _countTiles(bounds, maxZoom);
+    const total  = _countTiles(bounds, maxZoom, _minZ);
     const sizeMB = (total * AVG_TILE_KB) / 1024;
     const sizeGB = sizeMB / 1024;
     if (sizeGB > MAX_SIZE_GB) {
@@ -382,7 +387,7 @@
       let checked = 0, found = 0;
       const SCAN_BATCH = 500;
 
-      for (let z = 1; z <= maxZoom && !_cancelled; z++) {
+      for (let z = _minZ; z <= maxZoom && !_cancelled; z++) {
         const r = _range(bounds, z);
         for (let x = r.xMin; x <= r.xMax && !_cancelled; x++) {
           for (let y = r.yMin; y <= r.yMax && !_cancelled; y++) {
@@ -411,7 +416,7 @@
 
       /* ── Phase 2: download uncached tiles (all zoom levels 1..maxZoom) ── */
       if (missing > 0) {
-        await _downloadMissing(bounds, maxZoom, mapId, cachedSet, destCache, volatileCache);
+        await _downloadMissing(bounds, maxZoom, mapId, cachedSet, destCache, volatileCache, _minZ);
       }
       if (_cancelled) { toastMsg('Interrotto', '', undefined, 'sidebar'); return; }
 
@@ -420,7 +425,7 @@
       // basemap later without enumerating the cache (which would freeze the UI).
       let tileCount = 0;
       try { tileCount = (await destCache.keys()).length; } catch (_) {}
-      _registerLayer(mapName, mapId, maxZoom, id, tileCount);
+      _registerLayer(mapName, mapId, maxZoom, id, tileCount, _minZ);
       registered = true;
       toastMsg('Basemap offline pronta: ' + mapName + ' (~' + sizeStr + ')', 'success', undefined, 'sidebar');
 
@@ -438,7 +443,7 @@
   }
 
   /* ===== REGISTER OFFLINE BASEMAP ===== */
-  function _registerLayer(name, sourceMapId, maxZoom, id, tiles) {
+  function _registerLayer(name, sourceMapId, maxZoom, id, tiles, minZoom) {
     const sourceEntry = BASEMAPS[sourceMapId];
     if (!sourceEntry || typeof sourceEntry.getTileUrl !== 'function') {
       toastMsg('Impossibile ricavare l’URL dei tile per questa mappa', 'error', undefined, 'sidebar'); return;
@@ -456,6 +461,10 @@
       BASEMAPS[id] = L.tileLayer.wms(sourceEntry._url, L.extend(p, {
         attribution: 'Offline: ' + name,
         uppercase: !!(sourceEntry.options && sourceEntry.options.uppercase),
+        // The saved copy inherits the source's scale window: nothing was downloaded below
+        // it, so requesting it offline would only produce misses — and, before this, the
+        // black empty frames the server had answered with.
+        minZoom: minZoom > 1 ? minZoom : undefined,
         maxZoom: maxZoom, maxNativeZoom: maxZoom
       }));
       // wmsParams travels in the config: on the next launch the entry has to be rebuilt as
@@ -464,6 +473,13 @@
       const wcfg = { id, type: 'wms_tiles', url: sourceEntry._url, wmsParams: p,
         uppercase: !!(sourceEntry.options && sourceEntry.options.uppercase),
         maxZoom: maxZoom, name: 'Offline: ' + name, offline: true, tiles: tiles || 0 };
+      if (minZoom > 1) wcfg.minZoom = minZoom;
+      /* The saved copy of a paper map is still a paper map: without the marker the white
+         backdrop stays off and the downloaded CTR sits on the dark UI, which is the very
+         thing the backdrop exists to prevent. */
+      const _src = (typeof customMapConfigs !== 'undefined')
+        ? customMapConfigs.find(c => c.id === sourceMapId) : null;
+      if (_src && _src.group) wcfg.group = _src.group;
       customMapConfigs.push(wcfg);
       _autoSaveConfig();
       _addBasemapUI(wcfg);
@@ -487,9 +503,13 @@
 
     BASEMAPS[id] = L.tileLayer(templateUrl, {
       attribution: 'Offline: ' + name,
+      minZoom: minZoom > 1 ? minZoom : undefined,
       maxZoom: maxZoom, maxNativeZoom: maxZoom
     });
     const cfg = { id, type: 'wmts', url: templateUrl, name: 'Offline: ' + name, offline: true, tiles: tiles || 0 };
+    const _src2 = (typeof customMapConfigs !== 'undefined')
+      ? customMapConfigs.find(c => c.id === sourceMapId) : null;
+    if (_src2 && _src2.group) cfg.group = _src2.group;
     customMapConfigs.push(cfg);
     _autoSaveConfig();
     _addBasemapUI(cfg);
@@ -561,26 +581,36 @@
         (typeof customMapConfigs !== 'undefined' ? customMapConfigs : [])
           .filter(c => c.offline).map(c => c.id)
       );
+      /* A map that cannot be downloaded is listed anyway, disabled, with the reason next to
+         it. Dropping it silently was worse than useless: someone who had just added their
+         regional WMS found it missing from here and no explanation anywhere — and, when the
+         list came out empty, an invitation to add a basemap, which is exactly what they had
+         done. The reason is the answer to the question being asked at that moment. */
+      let usable = 0;
       document.querySelectorAll('#basemap-list input[name="basemap"]').forEach(radio => {
         const id = radio.value;
         if (offlineIds.has(id)) return;
         const entry = BASEMAPS[id];
-        if (!entry || entry._needsCreds || typeof entry.getTileUrl !== 'function') return;
-        if (_offlineBlocked(entry)) return;   // provider prohibits bulk download → not offerable offline
+        if (!entry) return;
         const span = radio.closest('label') && radio.closest('label').querySelector('span');
         const name = span ? span.textContent.trim() : id;
+        let why = '';
+        if (entry._needsCreds) why = 'richiede l’accesso';
+        else if (typeof entry.getTileUrl !== 'function') why = 'immagine unica, non a tile';
+        else if (_offlineBlocked(entry)) why = 'il fornitore vieta il download massivo';
         const o = document.createElement('option');
-        o.value = id; o.textContent = name;
+        o.value = id;
+        o.textContent = why ? name + ' — non scaricabile (' + why + ')' : name;
+        if (why) o.disabled = true; else usable++;
         mapSelect.appendChild(o);
       });
-      // With every bundled provider blocked, this list is empty until the user adds a
-      // basemap of their own. Say so, instead of showing an empty dropdown that looks
-      // like a bug.
-      if (!mapSelect.options.length) {
+      if (!usable) {
         const o = document.createElement('option');
         o.value = ''; o.disabled = true; o.selected = true;
-        o.textContent = 'Nessuna mappa scaricabile — aggiungine una in Livelli';
-        mapSelect.appendChild(o);
+        o.textContent = mapSelect.options.length
+          ? 'Nessuna delle mappe attive è scaricabile'
+          : 'Nessuna mappa scaricabile — aggiungine una in Livelli';
+        mapSelect.insertBefore(o, mapSelect.firstChild);
       }
       _syncTos();   // the list was rebuilt: match the notice to whatever is now selected
     }

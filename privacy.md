@@ -47,7 +47,7 @@ conservato dall'app né trasmesso ad altri.
 | Esri ArcGIS Online | Mappa satellitare e servizi ArcGIS | Area richiesta |
 | Nominatim (OpenStreetMap) | Ricerca di un indirizzo | Il testo cercato |
 | OSRM / routing OpenStreetMap | Calcolo di un percorso | Partenza e destinazione |
-| Open-Meteo | Quota del terreno e meteo | Coordinate del punto |
+| Open-Meteo | Quota del terreno | Coordinate del punto |
 | Geoportali regionali (Friuli-Venezia Giulia, Lazio, Liguria, Puglia, Sardegna, Sicilia, Toscana) | Carte tecniche regionali come mappa di base | Area richiesta |
 | Server WMS/WFS aggiunti da te | Quando attivi quel livello | Area richiesta |
 

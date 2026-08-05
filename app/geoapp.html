@@ -66,7 +66,13 @@
   })();
   </script>
   <link rel="manifest" href="manifest.json">
-  <meta name="apple-mobile-web-app-title" content="GISCatasto">
+  <!-- The app already ships a dark theme. Without this declaration the Android WebView
+     applies algorithmic darkening on top of it, and its image classifier INVERTS anything
+     that looks like line art on a light background — which is exactly what a CTR is:
+     the paper went dark and the buildings came out lighter than it. Declaring the scheme
+     tells the WebView the page handles dark mode itself and to keep its hands off. -->
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-title" content="GISCatasto">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <!-- Leaflet core -->
   <link rel="stylesheet" href="lib/leaflet.css">
@@ -560,7 +566,10 @@
               <div class="offline-progress-bg"><div class="offline-progress-fill" id="offline-progress-fill"></div></div>
               <span class="hint" id="offline-progress-text" style="display:block;text-align:center;margin-top:3px"></span>
             </div>
-            <button class="btn btn-primary btn-full" id="btn-offline-start">
+            <p class="hint" style="margin:0 0 8px">Prima di andare sul campo, prova la mappa scaricata in
+        modalità aereo: è l'unico modo per accorgersi di un download incompleto mentre hai ancora
+        rete per rifarlo.</p>
+      <button class="btn btn-primary btn-full" id="btn-offline-start">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
               Converti la cache in mappa
             </button>
@@ -647,7 +656,7 @@
 
             <div class="guide-section">
               <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>Layer</h4>
-              <div class="guide-item"><span class="guide-key">Basemap</span><span class="guide-desc">Scegli la mappa di sfondo dall’elenco</span></div>
+              <div class="guide-item"><span class="guide-key">Basemap</span><span class="guide-desc">Scegli la mappa di sfondo dall’elenco. In fondo, il blocco richiudibile <b>“Cartografia regionale — esempi”</b> raccoglie alcune carte tecniche regionali (CTR): sono esempi, non una copertura nazionale, e le altre regioni si aggiungono da “Aggiungi mappa web”. Una CTR è disegnata per scale grandi: <b>si vede solo dallo zoom indicato nel suo nome</b>, e sotto quella soglia resta un foglio bianco — mostrarla comunque produrrebbe una massa di tratti illeggibile</span></div>
               <div class="guide-item"><span class="guide-key">Aggiungi mappa web</span><span class="guide-desc">Aggiungi per URL un WMS, un WFS, un WMTS/XYZ o un ArcGIS MapServer. Overlay WMS: una sola immagine GetMap per vista (non a tile), richiesta nel CRS geografico del server (EPSG:4258/4326/6706) o in Web Mercator (EPSG:3857) — ideale per sovrapposizioni raster come le etichette. WFS: geometrie vettoriali (poligoni e punti) scaricate per vista sopra lo zoom minimo impostato (di serie 15: valori più bassi rischiano scaricamenti enormi) e disegnate come GeoJSON — la scelta giusta per dati catastali e topografici. Tocca “Leggi i layer” per ricavare da solo nomi, CRS e versione del protocollo dalle capabilities del server; per i WMS riporta anche l’intervallo di zoom in cui il layer viene disegnato, perché fuori da quell’intervallo il server risponde con un’immagine vuota invece che con un errore — un overlay WMS aggiunto così viene poi richiesto solo dentro l’intervallo, e non dipinge più un riquadro vuoto sotto di esso. WMTS/XYZ e le cache ArcGIS entrano come basemap, i WMS come overlay, ma la scelta resta modificabile. Gli overlay vengono salvati e ripristinati al lancio successivo con la loro opacità e visibilità. Funziona con i server conformi OGC (GeoServer, deegree, MapServer, QGIS Server); gli endpoint MapServer con <code>?map=...</code> vengono conservati. Provato su Agenzia delle Entrate INSPIRE, PCN (minambiente) e IGM.</span></div>
               <div class="guide-item"><span class="guide-key">Filtro WFS</span><span class="guide-desc">I campi attributo e valori mostrano solo le geometrie che corrispondono. Carica prima il layer senza filtro e tocca una geometria per leggere i nomi degli attributi nel popup. Più valori esatti: separati da virgola (es. <code>A001,B002</code>). Caratteri jolly: <code>*</code> (qualsiasi sequenza), <code>?</code> (un solo carattere) — es. <code>MIL*</code>. Usa l’OGC Filter Encoding (<code>PropertyIsEqualTo</code> / <code>PropertyIsLike</code>), supportato da GeoServer, deegree, MapServer e QGIS Server. A layer caricato, tocca il pulsante ▽ sulla sua riga nel pannello per modificare il filtro sul posto: non serve rimuoverlo e riaggiungerlo.</span></div>
               <div class="guide-item"><span class="guide-key">Selezione WFS</span><span class="guide-desc">Quando ci sono layer WFS caricati compare un distintivo con “⊙ Seleziona”. Toccalo per attivare la selezione con un tocco: se i layer WFS sono più di uno appare un elenco per scegliere il bersaglio — solo le geometrie di quel layer rispondono al tocco, le altre si aprono normalmente. Scelto il layer, tocca una geometria per selezionarla o deselezionarla subito, senza popup. Le geometrie selezionate mostrano un’etichetta fissa presa dalla proprietà <code>label</code> o <code>name</code> quando c’è (nel catasto: codice o numero della particella). Il distintivo riporta il nome del layer attivo. Finché la modalità è accesa il layer bersaglio viene portato temporaneamente in primo piano, così riceve sempre i tuoi tocchi qualunque sia la sua posizione nell’elenco; uscendo, il tuo ordine torna com’era. Tocca di nuovo “⊙ Seleziona” per azzerare. In alternativa funziona anche il pulsante “☆ Seleziona” nel popup. Il contatore mostra quante ne hai scelte: tocca ⬇ KML per esportarle, ✕ per deselezionare tutto. Il KML esportato conserva colore e trasparenza del layer, quindi si apre già vestito in Google Earth.</span></div>
@@ -716,7 +725,7 @@
               <div class="guide-item"><span class="guide-key">Installazione precedente</span><span class="guide-desc">Le mappe offline salvate da una versione precedente usano un formato vecchio; arrivati a 4 GB l’app propone una pulizia una tantum (poi vanno riscaricate) per tenere veloce l’archivio. Rimandando resta più lenta e la richiesta torna al lancio successivo</span></div>
               <div class="guide-item"><span class="guide-key">Scheda Cache</span><span class="guide-desc">Scegli il KML dell’area, lo zoom massimo e la mappa, poi tocca “Converti la cache in mappa”: l’app controlla la cache, scarica tutti i tile mancanti (dallo zoom 1 al massimo) e registra la basemap offline in una cache protetta tutta sua</span></div>
               <div class="guide-item"><span class="guide-key">Quali mappe</span><span class="guide-desc">“Ortofoto Italia 2012” è la basemap di serie che puoi scaricare: è la copertura aerea nazionale pubblicata dal Geoportale Nazionale, i cui termini non pongono limiti alla copia locale. Sono 50 cm da un volo del 2012, quindi più vecchia e meno fine delle immagini online, e viene disegnata solo dallo zoom 11 in avanti. Le altre basemap di serie (OpenTopoMap, OpenStreetMap, CARTO, Esri) funzionano solo online: i rispettivi fornitori non consentono il download massivo dei tile, e l’app lo impedisce invece di lasciare la scelta a te. Le basemap che aggiungi tu restano sempre scaricabili, nel rispetto dei loro termini. Navigare su una qualsiasi di esse riempie comunque la cache volatile, ed è quello che tiene funzionanti offline le aree guardate di recente.</span></div>
-              <div class="guide-item"><span class="guide-key">Basemap offline</span><span class="guide-desc">Compare nell’elenco delle basemap e serve tutti i livelli di zoom dalla sua cache, senza rete. La rimuovi con la ✕, che elimina anche i tile scaricati</span></div>
+              <div class="guide-item"><span class="guide-key">Basemap offline</span><span class="guide-desc">Compare nell’elenco delle basemap e serve dalla sua cache, senza rete, gli zoom che sono stati scaricati. Se la mappa di origine si disegna solo da un certo zoom in su — le carte tecniche regionali lo fanno, e la soglia è scritta nel loro nome — il download parte da lì: sotto quella soglia non c’era niente da scaricare. La rimuovi con la ✕, che elimina anche i tile scaricati</span></div>
               <div class="guide-item"><span class="guide-key">Interrompi</span><span class="guide-desc">Ferma il download a metà; i tile già scaricati restano in cache</span></div>
               <div class="guide-item"><span class="guide-key">Svuota la cache dei tile</span><span class="guide-desc">Cancella TUTTI i tile in cache: quelli di navigazione e ogni basemap offline salvata (nessun altro dato dell’app viene toccato). Le basemap offline vanno riscaricate</span></div>
             </div>
@@ -1008,7 +1017,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.1.9</span></div>
+      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.2.4</span></div>
       <div class="about-row"><span class="lbl">Autore</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">Licenza</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — software libero</a></span></div>
       <div class="about-row"><span class="lbl">Tecnologia</span><span class="val">Leaflet · Cordova · Android</span></div>
@@ -1038,7 +1047,7 @@
       <div class="credits-row"><span class="who">OpenTopoMap</span><span class="what">Mappa topografica — CC BY-SA</span></div>
       <div class="credits-row"><span class="who">CARTO</span><span class="what">Mappe di base — condizioni CARTO</span></div>
       <div class="credits-row"><span class="who">Esri e fornitori ArcGIS Online</span><span class="what">Mappa satellitare e tematiche — condizioni Esri</span></div>
-      <div class="credits-row"><span class="who">Open-Meteo</span><span class="what">Quota del terreno e meteo — CC BY 4.0</span></div>
+      <div class="credits-row"><span class="who">Open-Meteo</span><span class="what">Quota del terreno — CC BY 4.0</span></div>
       <div class="credits-row"><span class="who">Regioni italiane</span><span class="what">Carte tecniche regionali (CTR) usate come mappa di base: Friuli-Venezia Giulia, Lazio, Liguria, Puglia, Sardegna, Sicilia, Toscana — dati aperti dei rispettivi geoportali</span></div>
     </div>
     <div class="credits-section">

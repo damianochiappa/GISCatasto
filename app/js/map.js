@@ -1233,7 +1233,7 @@ function _showTargetPicker() {
     _wfsRegistry.map(e =>
       `<button class="wtp-btn" data-type="${e.typeName}">${e.name}</button>`
     ).join('') +
-    '<button class="wtp-cancel">Cancel</button>';
+    '<button class="wtp-cancel">Annulla</button>';
   picker.classList.remove('hidden');
   picker.querySelectorAll('.wtp-btn').forEach(b => {
     b.addEventListener('click', e => {
@@ -2024,6 +2024,56 @@ const _WFSLayer = L.Layer.extend({
 /* isOverlay decides only the pane a WMS layer renders into (overlay z260 vs basemap
    z250); both use the same Leaflet _WMSImageLayer. If omitted, auto-detected from
    cfg.useAs === 'overlay' (config restore). */
+/* Can this WMS be served as tiles?
+   "Tiled" is not a property of the server: any WMS answers a GetMap for whatever bounding box
+   it is given, so asking for one screen-sized image or for twenty 256 px squares is the
+   client's choice. What the choice depends on is the CRS — a tile layer can only request in
+   the map's own system, Web Mercator — and the declared list of supported CRS is not
+   trustworthy (some services answer 3857 without advertising it, others advertise it and
+   fail). So the question is settled by measurement: ask for one real tile and see whether a
+   decodable image comes back. An <img> is used rather than fetch() because it needs no CORS —
+   the server's cooperation is exactly what is being tested, not its headers.
+   It matters because only a tiled layer can be taken offline: the downloader has no way to
+   store a single viewport-sized image. */
+function _probeWmsTiled(url, layers, version, minZoom, cb) {
+  let done = false;
+  const finish = ok => { if (!done) { done = true; cb(ok); } };
+  try {
+    const z = Math.max(minZoom || 0, (map && map.getZoom && map.getZoom()) || 15);
+    const c = (map && map.getCenter) ? map.getCenter() : L.latLng(42, 12);
+    const n = Math.pow(2, z);
+    const tx = Math.floor((c.lng + 180) / 360 * n);
+    const la = c.lat * Math.PI / 180;
+    const ty = Math.floor((1 - Math.log(Math.tan(la) + 1 / Math.cos(la)) / Math.PI) / 2 * n);
+    const m = (xt, yt) => {
+      const lo = xt / n * 360 - 180;
+      const lt = Math.atan(Math.sinh(Math.PI * (1 - 2 * yt / n))) * 180 / Math.PI;
+      return [lo * 20037508.34 / 180,
+              Math.log(Math.tan((90 + lt) * Math.PI / 360)) / (Math.PI / 180) * 20037508.34 / 180];
+    };
+    const sw = m(tx, ty + 1), ne = m(tx + 1, ty);
+    const sp = _splitOgcUrl(url.split('#')[0]);
+    const ver = version || '1.1.1';
+    const q = {
+      SERVICE: 'WMS', VERSION: ver, REQUEST: 'GetMap',
+      LAYERS: layers, STYLES: '', FORMAT: 'image/png', TRANSPARENT: 'FALSE',
+      BGCOLOR: '0xFFFFFF', WIDTH: 256, HEIGHT: 256,
+      BBOX: [sw[0], sw[1], ne[0], ne[1]].join(',')
+    };
+    // 1.3.0 renamed SRS to CRS. Sending the wrong one gets the request refused for a reason
+    // that has nothing to do with the question being asked — which is how this probe first
+    // reported the Agenzia delle Entrate service as unable to serve Web Mercator.
+    q[parseFloat(ver) >= 1.3 ? 'CRS' : 'SRS'] = 'EPSG:3857';
+    const probeUrl = sp.base.replace(/\/$/, '') + '?' + (sp.pre ? sp.pre + '&' : '') +
+      Object.entries(q).map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v)).join('&');
+    const img = new Image();
+    img.onload  = () => finish(img.naturalWidth >= 8 && img.naturalHeight >= 8);
+    img.onerror = () => finish(false);   // an XML ServiceException does not decode as an image
+    setTimeout(() => finish(false), 8000);
+    img.src = probeUrl;
+  } catch (_) { finish(false); }
+}
+
 function _createLayer(cfg, token, isOverlay) {
   if (isOverlay === undefined) isOverlay = (cfg.useAs === 'overlay');
   const url = cfg.url.replace(/\/?$/, '');
@@ -2065,7 +2115,7 @@ function _createLayer(cfg, token, isOverlay) {
       // bundled, user-added via "Add web map", and layers restored from an older install
       // (their saved crs, or geographic when none was stored) — so the guard is universal.
       const _isWebMerc = /3857|900913|3785|102100/.test(_crsCode);
-      let _ovMinZoom = (isOverlay && cfg.minZoom != null) ? cfg.minZoom : null;
+      let _ovMinZoom = (cfg.minZoom != null) ? cfg.minZoom : null;
       if (isOverlay && !_isWebMerc) _ovMinZoom = Math.max(_ovMinZoom || 0, 8);
       const lyr = new _WMSImageLayer(wmsUrl, {
         layers: cfg.layers, version: cfg.version || (isOverlay ? '1.3.0' : '1.1.1'),
@@ -2073,8 +2123,9 @@ function _createLayer(cfg, token, isOverlay) {
         attribution: cfg.name, opacity: 0.8,
         crs: _crsCode === 'EPSG:3857' ? L.CRS.EPSG3857 : L.CRS.EPSG4326,
         crsCode: _crsCode, geoAxes: _isGeo,
-        // Gate the request by scale window (overlays only, never a basemap); non-Web-
-        // Mercator overlays are additionally floored to z8 by _ovMinZoom above.
+        // Gate the request by the layer's own scale window, basemap included: below it the
+        // service has nothing to draw, and a spoken "zoom in" beats a silent empty frame.
+        // Non-Web-Mercator overlays are additionally floored to z8 by _ovMinZoom above.
         minZoom: _ovMinZoom,
         pane:       isOverlay ? 'wms-overlay' : 'wms-basemap-img',
         paneZIndex: isOverlay ? 260 : 250
@@ -2122,6 +2173,16 @@ async function _fetchServiceInfo(url) {
 }
 
 function _applyBasemap(id, layer) {
+  /* A regional technical map is ink on paper, and it only draws inside its design scale:
+     below its minZoom Leaflet requests nothing and the container shows through. On the dark
+     app background that reads as a broken map, so while one of these is active the map sits
+     on paper white — out of scale then looks like a blank sheet, which is what it is. */
+  try {
+    const _cfg = (typeof customMapConfigs !== 'undefined')
+      ? customMapConfigs.find(c => c.id === id) : null;
+    const _el = document.getElementById('map');
+    if (_el) _el.classList.toggle('paper-basemap', !!(_cfg && _cfg.group === 'regionale'));
+  } catch(_) {}
   try { map.removeLayer(currentBasemap); } catch(e) {}
   currentBasemap = layer; currentBasemapId = id;
   try { layer.addTo(map); } catch(e) { toastMsg('Errore nel caricamento della mappa', 'error'); return; }
@@ -2290,10 +2351,10 @@ function _addBasemapUI(cfg) {
     }
 
     const hints = {
-      wms:    'Base endpoint only — e.g.<br><code style="font-size:10px;word-break:break-all">https://wms.cartografia.agenziaentrate.gov.it/inspire/wms/ows01.php</code><br>Paste a GetCapabilities URL too — OGC params are dropped, MapServer <code>?map=...</code> is kept. Works with OGC WMS servers (GeoServer, MapServer, MapProxy, QGIS Server, deegree) in a geographic CRS (EPSG:4326/4258/6706) or Web Mercator (EPSG:3857). Click <b>Get layers</b> to auto-detect.',
-      wfs:    'Base endpoint only — e.g.<br><code style="font-size:10px;word-break:break-all">https://wfs.cartografia.agenziaentrate.gov.it/inspire/wfs/owfs01.php</code><br>GetCapabilities populates layers, CRS and WFS version. Click <b>Get layers</b> before <b>Add</b> for legacy GML-only servers (e.g. PCN MapServer).',
-      wmts:   'URL template with {z}/{x}/{y} &mdash; e.g. https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-      arcgis: 'URL up to .../MapServer &mdash; e.g. https://server/.../MapServer'
+      wms:    'Solo l’indirizzo base — per esempio<br><code style="font-size:10px;word-break:break-all">https://wms.cartografia.agenziaentrate.gov.it/inspire/wms/ows01.php</code><br>Puoi incollare anche un URL di GetCapabilities: i parametri OGC vengono tolti, il <code>?map=...</code> di MapServer resta. Tocca <b>Leggi i layer</b> per ricavare nomi, CRS e versione.',
+      wfs:    'Solo l’indirizzo base — per esempio<br><code style="font-size:10px;word-break:break-all">https://wfs.cartografia.agenziaentrate.gov.it/inspire/wfs/owfs01.php</code><br>Il GetCapabilities compila layer, CRS e versione. Con i server che rispondono solo in GML, tocca <b>Leggi i layer</b> prima di <b>Aggiungi</b>.',
+      wmts:   'Modello di URL con {z}/{x}/{y} &mdash; per esempio https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      arcgis: 'URL fino a .../MapServer &mdash; per esempio https://server/.../MapServer'
     };
     document.getElementById('ws-hint').innerHTML = hints[t] || '';
   }
@@ -2304,8 +2365,8 @@ function _addBasemapUI(cfg) {
     const open = form.style.display !== 'none';
     form.style.display = open ? 'none' : 'flex';
     toggleBtn.innerHTML = open
-      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add web map'
-      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg> Close';
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Aggiungi mappa web'
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg> Chiudi';
   });
 
   function _fillSelect(sel, values, selected) {
@@ -2588,9 +2649,13 @@ function _addBasemapUI(cfg) {
       toastMsg('Filtro WFS: compila sia l’attributo sia i valori, oppure lascia vuoti entrambi', 'warn');
     const cfg = { id, type, url, name, layers, version, crs, protected: isProtected };
     if (minZoom !== undefined) cfg.minZoom = minZoom;
-    // WMS overlays: adopt the min zoom derived from the layer's scale window (Get layers), so the
-    // layer stops requesting an empty image below its drawable range. Basemaps are never gated.
-    if (type === 'wms' && useAs === 'overlay') {
+    /* WMS: adopt the min zoom derived from the layer's scale window (Get layers), so the layer
+       stops requesting an empty image below its drawable range. This used to be applied to
+       overlays only, on the reasoning that a basemap must never blank out — but the silent
+       failure that reasoning produced is worse than the blank: outside its scale window the
+       server answers with an empty or black frame and the user has nothing to go on. Gated,
+       the layer says "Zooma per caricare …" instead. */
+    if (type === 'wms') {
       const _wz = _wmsMinZoomByLayer[url + '|' + layers];
       if (_wz != null && isFinite(_wz)) cfg.minZoom = _wz;
     }
@@ -2652,7 +2717,7 @@ function _addBasemapUI(cfg) {
         document.getElementById('ws-name').value   = '';
         document.getElementById('ws-layers').value = '';
         form.style.display = 'none';
-        toggleBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add web map';
+        toggleBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Aggiungi mappa web';
         addBtn.disabled = false;
       };
 
@@ -2678,7 +2743,32 @@ function _addBasemapUI(cfg) {
       return;
     }
 
-    /* ── Basemap: existing behaviour ── */
+    /* ── Basemap ── */
+    /* A WMS basemap is probed first: if the service answers a real tile in Web Mercator it is
+       wired as tiles, which is what makes it downloadable for offline use, and the user is told
+       so. If it does not, it stays a single viewport image — perfectly usable on screen — and
+       the user is told that too, in the same breath. The alternative was what happened before:
+       the map worked, then never appeared among the downloadable sources, with no explanation
+       anywhere. */
+    if (type === 'wms' && !isProtected) {
+      _probeWmsTiled(url, layers, cfg.version, cfg.minZoom, tiled => {
+        if (tiled) {
+          cfg.type = 'wms_tiles';
+          cfg.wmsParams = { layers: layers, format: 'image/png', transparent: false,
+                            bgcolor: '0xFFFFFF', version: cfg.version || '1.1.1' };
+          cfg.maxZoom = cfg.maxZoom || 20;
+        }
+        try { BASEMAPS[id] = _createLayer(cfg, null); }
+        catch(e) { toastMsg('Errore: ' + e.message, 'error'); addBtn.disabled = false; return; }
+        _finishAddBasemap(cfg, id, name);
+        toastMsg(tiled
+          ? name + ' — scaricabile offline'
+          : name + ' — solo online (niente Web Mercator)',
+          tiled ? 'success' : 'warn');
+      });
+      return;
+    }
+
     if (isProtected) {
       BASEMAPS[id] = { _needsCreds: true, _cfg: cfg };
     } else {
@@ -2687,16 +2777,22 @@ function _addBasemapUI(cfg) {
     }
 
     customMapConfigs.push(cfg);
-    _autoSaveConfig();
-    const label = _addBasemapUI(cfg);
-    label.querySelector('input').click();
-
-    document.getElementById('ws-url').value    = '';
-    document.getElementById('ws-name').value   = '';
-    document.getElementById('ws-layers').value = '';
-    form.style.display = 'none';
-    toggleBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add web map';
+    _finishAddBasemap(cfg, id, name);
     toastMsg('Mappa aggiunta: ' + name, 'success');
     addBtn.disabled = false;
+
+    /* Shared tail: the probe path lands here asynchronously, the others straight away. */
+    function _finishAddBasemap(c, cid, cname) {
+      if (customMapConfigs.indexOf(c) === -1) customMapConfigs.push(c);
+      _autoSaveConfig();
+      const label = _addBasemapUI(c);
+      label.querySelector('input').click();
+      document.getElementById('ws-url').value    = '';
+      document.getElementById('ws-name').value   = '';
+      document.getElementById('ws-layers').value = '';
+      form.style.display = 'none';
+      toggleBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Aggiungi mappa web';
+      addBtn.disabled = false;
+    }
   });
 })();

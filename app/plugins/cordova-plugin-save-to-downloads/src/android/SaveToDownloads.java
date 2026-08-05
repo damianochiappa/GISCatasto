@@ -1,4 +1,4 @@
-package com.geotool.app;
+package com.geotool.giscatasto;
 
 import android.content.ContentValues;
 import android.net.Uri;

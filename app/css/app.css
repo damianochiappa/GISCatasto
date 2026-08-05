@@ -1,4 +1,5 @@
 /* ===== DESIGN TOKENS ===== */
+:root { color-scheme: dark; }
 :root {
   --bg:          #080d1a;
   --surface:     #101624;
@@ -407,18 +408,23 @@ html, body {
   cursor: not-allowed;
 }
 
+/* While a regional technical map is the basemap the container is paper, not the dark UI:
+   below the map's design scale Leaflet draws nothing and what shows through must read as an
+   empty sheet. Leaflet paints tiles over this, so it is only visible where there are none. */
+#map.paper-basemap { background: #f6f5f1; }
+
 /* Regional cartography: a collapsible block inside the basemap list, closed by default —
    it holds examples, and open by default it would push the general basemaps off screen. */
 .basemap-group { border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
 .basemap-group > summary {
-  cursor: pointer; padding: 9px 10px; font-size: 12px; font-weight: 600;
+  cursor: pointer; padding: 11px 10px; font-size: 14px; font-weight: 600;
   color: var(--text); background: var(--surface); list-style: none;
   display: flex; align-items: center; gap: 6px; min-height: 38px;
 }
 .basemap-group > summary::-webkit-details-marker { display: none; }
 .basemap-group > summary::before { content: '\25B8'; color: var(--text-muted); font-size: 11px; }
 .basemap-group[open] > summary::before { content: '\25BE'; }
-.basemap-group > .hint { padding: 0 10px 8px; margin: 0; }
+.basemap-group > .hint { padding: 0 10px 9px; margin: 0; font-size: 12px; line-height: 1.5; }
 .basemap-group-body { display: flex; flex-direction: column; gap: 4px; padding: 0 6px 6px; }
 
 /* Layer list */
