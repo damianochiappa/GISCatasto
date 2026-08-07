@@ -5,7 +5,13 @@ permalink: /privacy/
 
 # Informativa privacy — GISCatasto
 
-**Ultimo aggiornamento:** 3 agosto 2026
+**Ultimo aggiornamento:** 6 agosto 2026
+
+GISCatasto è un'applicazione **indipendente**: non è affiliata all'Agenzia delle Entrate, al Ministero
+dell'Ambiente e della Sicurezza Energetica o alle Regioni, non li rappresenta e non è un canale
+ufficiale. Interroga i loro servizi pubblici come farebbe un browser; i dati restano dei rispettivi
+enti e quanto mostrato non ha valore certificativo. Le fonti ufficiali, con i link, sono in fondo a
+questa pagina e nell'app in Info → Fonti.
 
 GISCatasto non richiede un account, non contiene sistemi di analytics o telemetria e non raccoglie
 alcun dato. Non esiste un server dell'applicazione: chi la sviluppa non riceve nulla da chi la usa.
@@ -71,6 +77,15 @@ in memoria fino alla chiusura dell'app. I campi vengono svuotati subito dopo l'i
 
 Servono a importare ed esportare i tuoi file (KML, GPX, GeoJSON) e a salvare le mappe per l'uso
 offline. Non vengono letti file diversi da quelli che scegli tu.
+
+## Fonti ufficiali dei dati
+
+I servizi qui sopra sono pubblicati dai rispettivi enti; questi sono i loro indirizzi ufficiali.
+
+- Agenzia delle Entrate — [consultazione cartografia catastale (WMS/WFS INSPIRE)](https://www.agenziaentrate.gov.it/portale/it/web/guest/schede/fabbricatiterreni/consultazione-cartografia-catastale/servizio-consultazione-cartografia) · [Geoportale Cartografico Catastale](https://geoportale.cartografia.agenziaentrate.gov.it/)
+- [Geoportale Nazionale](https://gn.mase.gov.it/portale/) — Ministero dell'Ambiente e della Sicurezza Energetica
+- Geoportali regionali: [Friuli-Venezia Giulia](https://irdat.regione.fvg.it/) · [Lazio](https://geoportale.regione.lazio.it/) · [Liguria](https://geoportal.regione.liguria.it/) · [Puglia](https://pugliacon.regione.puglia.it/web/sit-puglia-sit) · [Sardegna](https://www.sardegnageoportale.it/) · [Sicilia](https://www.sitr.regione.sicilia.it/) · [Toscana](https://www.regione.toscana.it/-/geoscopio)
+- [OpenStreetMap](https://www.openstreetmap.org/copyright) · [OpenTopoMap](https://opentopomap.org/about) · [CARTO](https://carto.com/attributions) · [Esri](https://www.esri.com/en-us/legal/terms/full-master-agreement) · [Open-Meteo](https://open-meteo.com/)
 
 ## Minori
 

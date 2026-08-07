@@ -637,14 +637,16 @@ document.getElementById('modal-about').addEventListener('click', function(e) {
    use; this is the standing list the store listing and the licences point at. */
 (function initCredits() {
   const modal = document.getElementById('modal-credits');
-  const link  = document.getElementById('about-credits-link');
+  // Two entry points: the "Fonti" row and the link inside the independence notice.
+  const links = [document.getElementById('about-credits-link'),
+                 document.getElementById('about-credits-link2')].filter(Boolean);
   const close = document.getElementById('credits-close');
-  if (!modal || !link) return;
-  link.addEventListener('click', e => {
+  if (!modal || !links.length) return;
+  links.forEach(link => link.addEventListener('click', e => {
     e.preventDefault();
     document.getElementById('modal-about').style.display = 'none';
     modal.style.display = 'flex';
-  });
+  }));
   if (close) close.addEventListener('click', () => { modal.style.display = 'none'; });
   modal.addEventListener('click', function(e) { if (e.target === this) this.style.display = 'none'; });
 })();

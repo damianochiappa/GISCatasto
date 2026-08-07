@@ -8,6 +8,12 @@ arrivano dai **servizi pubblici INSPIRE dell'Agenzia delle Entrate**; la **ricer
 comune, foglio e particella** porta la mappa sull'area e la evidenzia; le **mappe scaricate restano
 disponibili senza connessione**.
 
+> **App indipendente.** GISCatasto non è affiliata all'Agenzia delle Entrate, al Ministero
+> dell'Ambiente e della Sicurezza Energetica o alle Regioni, non li rappresenta e non è un canale
+> ufficiale. I dati sono letti al momento della richiesta dai loro servizi pubblici — elencati con i
+> link in [Fonti dei dati](#fonti-dei-dati) — e restano dei rispettivi enti; quanto mostrato non ha
+> valore certificativo. Per visure ed estratti di mappa ufficiali rivolgiti all'Agenzia delle Entrate.
+
 [![Licenza: GPL v3](https://img.shields.io/badge/Licenza-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 ## Dove si scarica
@@ -100,6 +106,18 @@ I servizi che l'app interroga per funzionare ricevono le tue richieste come se l
 browser, e valgono le rispettive informative.
 
 **[Informativa privacy completa](privacy/)**
+
+---
+
+## Fonti dei dati
+
+I dati non sono di questa applicazione: sono pubblicati dagli enti che li producono, e questi sono i
+loro indirizzi ufficiali. Le stesse fonti, con i link, sono nell'app in Info → Fonti.
+
+- **Agenzia delle Entrate** — [consultazione cartografia catastale (WMS/WFS INSPIRE)](https://www.agenziaentrate.gov.it/portale/it/web/guest/schede/fabbricatiterreni/consultazione-cartografia-catastale/servizio-consultazione-cartografia) · [Geoportale Cartografico Catastale](https://geoportale.cartografia.agenziaentrate.gov.it/)
+- **[Geoportale Nazionale](https://gn.mase.gov.it/portale/)** — Ministero dell'Ambiente e della Sicurezza Energetica: ortofoto AGEA e limiti amministrativi
+- **Geoportali regionali** (CTR) — [Friuli-Venezia Giulia](https://irdat.regione.fvg.it/) · [Lazio](https://geoportale.regione.lazio.it/) · [Liguria](https://geoportal.regione.liguria.it/) · [Puglia](https://pugliacon.regione.puglia.it/web/sit-puglia-sit) · [Sardegna](https://www.sardegnageoportale.it/) · [Sicilia](https://www.sitr.regione.sicilia.it/) · [Toscana](https://www.regione.toscana.it/-/geoscopio)
+- **Mappe di base e servizi** — [OpenStreetMap](https://www.openstreetmap.org/copyright) · [OpenTopoMap](https://opentopomap.org/about) · [CARTO](https://carto.com/attributions) · [Esri](https://www.esri.com/en-us/legal/terms/full-master-agreement) · [Open-Meteo](https://open-meteo.com/)
 
 ---
 

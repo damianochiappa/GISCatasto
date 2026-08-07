@@ -122,7 +122,7 @@
         <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 10 H26 V26 H6 Z" stroke="var(--accent)"/><path d="M26 10 H42 V20 H26 Z" stroke="var(--accent)"/><path d="M26 20 H42 V26 H26 Z" stroke="var(--accent)"/><path d="M6 26 H18 V42 H6 Z" stroke="var(--accent)"/><path d="M30 26 H42 V42 H30 Z" stroke="var(--accent)"/><path d="M18 26 H30 V42 H18 Z" fill="rgba(242,163,60,.85)" stroke="#f2a33c"/></svg>
       </div>
       <h2 class="ob-title">Catasto</h2>
-      <p class="ob-text">Scegli comune, foglio e particella: l'app ti porta sull'area e la evidenzia. I confini arrivano dai servizi pubblici dell'Agenzia delle Entrate: servono a riconoscere una particella, non a definirne i confini di proprietà, e conservano l'imprecisione propria della cartografia catastale.</p>
+      <p class="ob-text">Scegli comune, foglio e particella: l'app ti porta sull'area e la evidenzia. I confini arrivano dai servizi pubblici dell'Agenzia delle Entrate: servono a riconoscere una particella, non a definirne i confini di proprietà, e conservano l'imprecisione propria della cartografia catastale. <strong>GISCatasto è un'app indipendente</strong>, non affiliata all'Agenzia delle Entrate e non rappresentativa di essa: le fonti ufficiali, con i rispettivi link, sono elencate in Info &rarr; Fonti.</p>
     </div>
 
     <div class="ob-slide">
@@ -1017,7 +1017,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.2.4</span></div>
+      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.2.5</span></div>
       <div class="about-row"><span class="lbl">Autore</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">Licenza</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — software libero</a></span></div>
       <div class="about-row"><span class="lbl">Tecnologia</span><span class="val">Leaflet · Cordova · Android</span></div>
@@ -1028,6 +1028,9 @@
       <div class="about-row"><span class="lbl">Privacy</span><span class="val"><a href="https://damianochiappa.github.io/GISCatasto/privacy/" target="_blank">Informativa</a></span></div>
     </div>
     <p class="modal-desc">App GIS utilizzabile senza rete: coordinate in MGRS/UTM/DD/DMS, disegno, registrazione tracce GPS, navigazione e download dei tile.</p>
+    <!-- Short form of the notice in the credits modal: the full one is a click away, but the
+         "not a government body" statement has to be visible without that click. -->
+    <p class="modal-desc"><strong>App indipendente</strong>, non affiliata all'Agenzia delle Entrate né ad altri enti pubblici e non rappresentativa degli stessi. I dati provengono dai loro servizi pubblici — fonti e link in <a href="#" id="about-credits-link2">Attribuzioni e licenze</a>.</p>
     <div class="modal-btns">
       <button class="btn btn-secondary" id="about-close">Chiudi</button>
     </div>
@@ -1039,16 +1042,26 @@
 <div id="modal-credits" class="modal-backdrop" style="display:none">
   <div class="modal-box modal-box-scroll">
     <h3>Attribuzioni e licenze</h3>
+    <!-- Google Play "Misleading claims": an app showing government information must name the
+         official source, LINK to it, and say plainly that it is not the government body.
+         The same two elements are required in the store listing — keep them aligned, and
+         keep a link on every public-sector row here. Links leave through allow-intent
+         (allow-navigation is off), so they open in the system browser. -->
+    <p class="credits-disclaimer">GISCatasto è un'app <strong>indipendente</strong>: non è affiliata all'Agenzia
+      delle Entrate, al Ministero dell'Ambiente e della Sicurezza Energetica o alle Regioni, non li
+      rappresenta e non è un canale ufficiale. I dati sono letti al momento della richiesta dai servizi
+      pubblici elencati qui sotto e restano dei rispettivi enti; quanto mostrato non ha valore
+      certificativo. Per visure ed estratti di mappa ufficiali rivolgiti all'Agenzia delle Entrate.</p>
     <div class="credits-section">
       <div class="credits-title">Fonti dei dati</div>
-      <div class="credits-row"><span class="who">Agenzia delle Entrate</span><span class="what">Cartografia catastale (WMS/WFS INSPIRE) — dati pubblici, condizioni del servizio</span></div>
-      <div class="credits-row"><span class="who">Geoportale Nazionale (PCN)</span><span class="what">Limiti amministrativi e ortofoto AGEA 2012 — dati pubblici</span></div>
-      <div class="credits-row"><span class="who">OpenStreetMap</span><span class="what">Mappa di base, ricerca indirizzi, percorsi — © contributori OpenStreetMap, ODbL</span></div>
-      <div class="credits-row"><span class="who">OpenTopoMap</span><span class="what">Mappa topografica — CC BY-SA</span></div>
-      <div class="credits-row"><span class="who">CARTO</span><span class="what">Mappe di base — condizioni CARTO</span></div>
-      <div class="credits-row"><span class="who">Esri e fornitori ArcGIS Online</span><span class="what">Mappa satellitare e tematiche — condizioni Esri</span></div>
-      <div class="credits-row"><span class="who">Open-Meteo</span><span class="what">Quota del terreno — CC BY 4.0</span></div>
-      <div class="credits-row"><span class="who">Regioni italiane</span><span class="what">Carte tecniche regionali (CTR) usate come mappa di base: Friuli-Venezia Giulia, Lazio, Liguria, Puglia, Sardegna, Sicilia, Toscana — dati aperti dei rispettivi geoportali</span></div>
+      <div class="credits-row"><span class="who">Agenzia delle Entrate</span><span class="what">Cartografia catastale (WMS/WFS INSPIRE) — dati pubblici, condizioni del servizio</span><a class="src" href="https://www.agenziaentrate.gov.it/portale/it/web/guest/schede/fabbricatiterreni/consultazione-cartografia-catastale/servizio-consultazione-cartografia" target="_blank" rel="noopener">agenziaentrate.gov.it — consultazione cartografia catastale</a><a class="src" href="https://geoportale.cartografia.agenziaentrate.gov.it/" target="_blank" rel="noopener">geoportale.cartografia.agenziaentrate.gov.it</a></div>
+      <div class="credits-row"><span class="who">Geoportale Nazionale (PCN)</span><span class="what">Limiti amministrativi e ortofoto AGEA 2012 — Ministero dell'Ambiente e della Sicurezza Energetica, dati pubblici</span><a class="src" href="https://gn.mase.gov.it/portale/" target="_blank" rel="noopener">gn.mase.gov.it</a></div>
+      <div class="credits-row"><span class="who">OpenStreetMap</span><span class="what">Mappa di base, ricerca indirizzi, percorsi — © contributori OpenStreetMap, ODbL</span><a class="src" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">openstreetmap.org/copyright</a></div>
+      <div class="credits-row"><span class="who">OpenTopoMap</span><span class="what">Mappa topografica — CC BY-SA</span><a class="src" href="https://opentopomap.org/about" target="_blank" rel="noopener">opentopomap.org</a></div>
+      <div class="credits-row"><span class="who">CARTO</span><span class="what">Mappe di base — condizioni CARTO</span><a class="src" href="https://carto.com/attributions" target="_blank" rel="noopener">carto.com/attributions</a></div>
+      <div class="credits-row"><span class="who">Esri e fornitori ArcGIS Online</span><span class="what">Mappa satellitare e tematiche — condizioni Esri</span><a class="src" href="https://www.esri.com/en-us/legal/terms/full-master-agreement" target="_blank" rel="noopener">esri.com — condizioni d'uso</a></div>
+      <div class="credits-row"><span class="who">Open-Meteo</span><span class="what">Quota del terreno — CC BY 4.0</span><a class="src" href="https://open-meteo.com/" target="_blank" rel="noopener">open-meteo.com</a></div>
+      <div class="credits-row"><span class="who">Regioni italiane</span><span class="what">Carte tecniche regionali (CTR) usate come mappa di base — dati aperti dei rispettivi geoportali</span><a class="src" href="https://irdat.regione.fvg.it/" target="_blank" rel="noopener">Friuli-Venezia Giulia — irdat.regione.fvg.it</a><a class="src" href="https://geoportale.regione.lazio.it/" target="_blank" rel="noopener">Lazio — geoportale.regione.lazio.it</a><a class="src" href="https://geoportal.regione.liguria.it/" target="_blank" rel="noopener">Liguria — geoportal.regione.liguria.it</a><a class="src" href="https://pugliacon.regione.puglia.it/web/sit-puglia-sit" target="_blank" rel="noopener">Puglia — pugliacon.regione.puglia.it</a><a class="src" href="https://www.sardegnageoportale.it/" target="_blank" rel="noopener">Sardegna — sardegnageoportale.it</a><a class="src" href="https://www.sitr.regione.sicilia.it/" target="_blank" rel="noopener">Sicilia — sitr.regione.sicilia.it</a><a class="src" href="https://www.regione.toscana.it/-/geoscopio" target="_blank" rel="noopener">Toscana — regione.toscana.it/-/geoscopio</a></div>
     </div>
     <div class="credits-section">
       <div class="credits-title">Librerie</div>

@@ -1497,6 +1497,18 @@ a.polyline-measure-controlOnBgColor:hover {
 .credits-row { display: flex; flex-direction: column; gap: 1px; font-size: 11px; line-height: 1.5; }
 .credits-row .who  { color: var(--text); font-weight: 600; }
 .credits-row .what { color: var(--text-muted); }
+/* The source link is the part Play asks for: it must be readable, not a footnote, and a long
+   .gov.it path must wrap instead of widening the dialog. */
+.credits-row .src {
+  color: var(--accent); font-size: 10.5px; text-decoration: none;
+  overflow-wrap: anywhere; padding: 1px 0;
+}
+.credits-row .src:active { text-decoration: underline; }
+.credits-disclaimer {
+  font-size: 11px; line-height: 1.55; color: var(--text);
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 9px 10px;
+}
 .modal-btns { display: flex; gap: 8px; margin-top: 2px; }
 .modal-btns .btn { flex: 1; }
 
