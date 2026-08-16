@@ -176,7 +176,7 @@
      Agenzia delle Entrate services this wizard queries hold no data for them. They are the
      only two provinces of ISTAT region 4, so dropping the whole region drops exactly them:
      offering it would produce an empty comune list and look like a broken service.
-     Filtered on the code, not the name \u2014 den_reg spelling varies between PCN datasets. */
+     Filtered on the code, not the name — den_reg spelling varies between PCN datasets. */
   const _EXCLUDED_REGION_CODES = { '4': 1 };   // Trentino-Alto Adige
 
   async function loadRegions() {

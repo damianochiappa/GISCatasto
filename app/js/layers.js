@@ -425,18 +425,27 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
       downloadFile(rawContent, stem + ext, rawMime);
     });
   });
+  /* Removal is not the same gesture as hiding, and the ✕ sits next to the visibility
+     toggle: the warning names the cheaper alternative rather than just asking twice. */
   item.querySelector('.layer-del').addEventListener('click', () => {
-    const l = loadedLayers[id];
-    map.removeLayer(l);
-    delete loadedLayers[id];
-    // Drop this overlay's dedicated stacking pane so panes don't accumulate.
-    if (item.dataset.ovPane) { const pe = map.getPane(item.dataset.ovPane); if (pe && pe.remove) pe.remove(); }
-    item.remove();
-    if (!Object.keys(loadedLayers).length) {
-      document.getElementById('layer-list').innerHTML = '<p class="layer-empty">Nessun layer caricato</p>';
-    }
-    _applyOverlayZOrder();
-    if (opts.onDelete) opts.onDelete();
+    showConfirmModal(
+      'Sei sicuro? Considera di spegnere il livello senza rimuoverlo: se lo rimuovi dovrai ' +
+      'aggiungerlo di nuovo a mano in futuro.',
+      () => {
+        const l = loadedLayers[id];
+        map.removeLayer(l);
+        delete loadedLayers[id];
+        // Drop this overlay's dedicated stacking pane so panes don't accumulate.
+        if (item.dataset.ovPane) { const pe = map.getPane(item.dataset.ovPane); if (pe && pe.remove) pe.remove(); }
+        item.remove();
+        if (!Object.keys(loadedLayers).length) {
+          document.getElementById('layer-list').innerHTML = '<p class="layer-empty">Nessun layer caricato</p>';
+        }
+        _applyOverlayZOrder();
+        if (opts.onDelete) opts.onDelete();
+      },
+      { rememberKey: 'giscatasto_hide_layer_del_warn', okLabel: 'Rimuovi' }
+    );
   });
 
   // Reordering: pointer-driven from the grip — see _bindReorder for why not HTML5 DnD.
@@ -489,7 +498,7 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
           map.fitBounds(bounds, { padding: [40,40], animate: true, maxZoom: 19 });
           // After fitBounds, the bbox-bound refresh will pick up and render the matched features.
         } else {
-          toastMsg('Trova: ' + (err || 'no result'), 'warn', undefined, 'sidebar');
+          toastMsg('Trova: ' + (err || 'nessun risultato'), 'warn', undefined, 'sidebar');
         }
       });
     });

@@ -12,37 +12,37 @@ function _mki(paths) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24">${paths}</svg>`;
 }
 const MARKER_ICONS = [
-  { e:'pos',    l:'Position',
+  { e:'pos',    l:'Posizione',
     html: _mki('<circle cx="12" cy="12" r="9" fill="#4f8ef7" stroke="white" stroke-width="1.5"/><circle cx="12" cy="12" r="3.5" fill="white"/>') },
-  { e:'hq',     l:'HQ / Command',
+  { e:'hq',     l:'Comando',
     html: _mki('<rect x="3" y="3" width="18" height="18" fill="#f5a623" stroke="white" stroke-width="1.5"/><text x="12" y="16.5" font-size="10" font-weight="900" fill="white" text-anchor="middle" font-family="Arial,sans-serif">C</text>') },
-  { e:'med',    l:'Medical Aid',
+  { e:'med',    l:'Soccorso sanitario',
     html: _mki('<rect x="2" y="2" width="20" height="20" rx="3" fill="white" stroke="#ef5350" stroke-width="1"/><rect x="9.5" y="4" width="5" height="16" fill="#ef5350"/><rect x="4" y="9.5" width="16" height="5" fill="#ef5350"/>') },
-  { e:'rally',  l:'Rally Point',
+  { e:'rally',  l:'Punto di raccolta',
     html: _mki('<polygon points="12,2 22,21 2,21" fill="#4caf7d" stroke="white" stroke-width="1.5"/><text x="12" y="19" font-size="9" font-weight="900" fill="white" text-anchor="middle" font-family="Arial,sans-serif">R</text>') },
-  { e:'danger', l:'Danger Zone',
+  { e:'danger', l:'Zona pericolosa',
     html: _mki('<polygon points="12,2 22,21 2,21" fill="#f5a623" stroke="white" stroke-width="1.5"/><text x="12" y="19.5" font-size="13" font-weight="900" fill="white" text-anchor="middle" font-family="Arial,sans-serif">!</text>') },
-  { e:'block',  l:'Obstacle / Block',
+  { e:'block',  l:'Ostacolo / Blocco',
     html: _mki('<circle cx="12" cy="12" r="9" fill="#ef5350" stroke="white" stroke-width="1.5"/><line x1="7" y1="7" x2="17" y2="17" stroke="white" stroke-width="2.5" stroke-linecap="round"/><line x1="17" y1="7" x2="7" y2="17" stroke="white" stroke-width="2.5" stroke-linecap="round"/>') },
-  { e:'cp',     l:'Checkpoint',
+  { e:'cp',     l:'Posto di controllo',
     html: _mki('<polygon points="12,2 22,12 12,22 2,12" fill="#ffd600" stroke="white" stroke-width="1.5"/><text x="12" y="16" font-size="7.5" font-weight="900" fill="#333" text-anchor="middle" font-family="Arial,sans-serif">CP</text>') },
-  { e:'heli',   l:'Helipad',
+  { e:'heli',   l:'Elisuperficie',
     html: _mki('<rect x="3" y="3" width="18" height="18" rx="2" fill="#1565c0" stroke="white" stroke-width="1.5"/><text x="12" y="17" font-size="13" font-weight="900" fill="white" text-anchor="middle" font-family="Arial,sans-serif">H</text>') },
-  { e:'fuel',   l:'Resupply',
+  { e:'fuel',   l:'Rifornimento',
     html: _mki('<circle cx="12" cy="12" r="9" fill="#2e7d52" stroke="white" stroke-width="1.5"/><text x="12" y="16.5" font-size="11" font-weight="900" fill="white" text-anchor="middle" font-family="Arial,sans-serif">F</text>') },
-  { e:'target', l:'Target',
+  { e:'target', l:'Obiettivo',
     html: _mki('<circle cx="12" cy="12" r="9" fill="none" stroke="#ef5350" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="none" stroke="#ef5350" stroke-width="2"/><line x1="12" y1="2" x2="12" y2="7" stroke="#ef5350" stroke-width="2"/><line x1="12" y1="17" x2="12" y2="22" stroke="#ef5350" stroke-width="2"/><line x1="2" y1="12" x2="7" y2="12" stroke="#ef5350" stroke-width="2"/><line x1="17" y1="12" x2="22" y2="12" stroke="#ef5350" stroke-width="2"/>') },
-  { e:'friend', l:'Friendly Force',
+  { e:'friend', l:'Forze amiche',
     html: _mki('<rect x="2" y="6" width="20" height="12" fill="#4f8ef7" stroke="white" stroke-width="1.5"/>') },
-  { e:'enemy',  l:'Hostile Force',
+  { e:'enemy',  l:'Forze ostili',
     html: _mki('<polygon points="12,22 2,4 22,4" fill="#ef5350" stroke="white" stroke-width="1.5"/>') },
-  { e:'fire',   l:'Fire',
+  { e:'fire',   l:'Incendio',
     html: _mki('<path d="M12 2c0 0-6 6-6 11a6 6 0 0 0 12 0C18 8 12 2 12 2z" fill="#ef5350" stroke="white" stroke-width="0.5"/><path d="M12 8c0 0-3 3-3 5.5a3 3 0 0 0 6 0C15 11 12 8 12 8z" fill="#f5a623"/>') },
-  { e:'flood',  l:'Flood',
+  { e:'flood',  l:'Allagamento',
     html: _mki('<rect x="2" y="2" width="20" height="20" rx="3" fill="#1565c0" stroke="white" stroke-width="1"/><path d="M2 13 Q5.5 9.5 9 13 Q12.5 16.5 16 13 Q18 11 22 13" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"/><path d="M2 17.5 Q5.5 14 9 17.5 Q12.5 21 16 17.5 Q18 15.5 22 17.5" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"/>') },
-  { e:'evac',   l:'Evacuation',
+  { e:'evac',   l:'Evacuazione',
     html: _mki('<rect x="2" y="2" width="20" height="20" rx="3" fill="#4caf7d" stroke="white" stroke-width="1"/><polygon points="12,4 19,13 15.5,13 15.5,20 8.5,20 8.5,13 5,13" fill="white"/>') },
-  { e:'camp',   l:'Base Camp',
+  { e:'camp',   l:'Campo base',
     html: _mki('<polygon points="12,3 22,19 2,19" fill="#2e7d52" stroke="white" stroke-width="1.5"/><rect x="9" y="14" width="6" height="5" fill="rgba(255,255,255,0.85)"/>') },
 ];
 
@@ -420,13 +420,92 @@ document.getElementById('btn-clear-draw').addEventListener('click', () => {
 /* ===== GPS TRACK ===== */
 let trackActive = false, trackPoints = [], trackDistance = 0, trackPolyline = null;
 
+/* Spike rejection. Without a fix on the network the receiver sometimes places a point tens
+   of metres away from where the recent pace can explain: the line jumps out and back, and
+   the wrong vertex has to be deleted by hand afterwards. A point is credible when it is
+   consistent with its neighbours — if the last few steps have been about 3 m, the next one
+   cannot be 20.
+   The reference is the MEDIAN of the last few accepted steps, not their average: a single
+   bad step must not raise the very bar it is meant to fail. The comparison is on implied
+   speed, because fixes do not arrive at a fixed rate — the same 20 m mean different things
+   after one second and after twenty.
+   A real acceleration is not lost. A rejected fix is held rather than dropped, and as soon
+   as the following one agrees with it, both are played into the track: pulling away from a
+   stop, or coming out of a tunnel, costs one fix of latency, not a truncated track.
+   Standing still is deliberately NOT filtered: at a standstill every step is jitter, so the
+   median is jitter too and nothing stands out. Removing that cloud would need a minimum
+   displacement rule, which was considered and turned down — it also throws away the slow
+   genuine movement that looks exactly like it. */
+const _TRK_WIN   = 5;     // accepted steps kept as the reference
+const _TRK_SEED  = 3;     // steps needed before the filter starts judging
+const _TRK_K     = 4;     // times the median speed before a fix is called impossible
+const _TRK_FLOOR = 1.5;   // m/s — floor, so a slow stretch does not reject everything
+let _trkSpeeds = [];      // implied speed of the recent accepted steps
+let _trkHeld   = [];      // fixes rejected once, waiting to be confirmed or dropped
+
+function _trkSpeed(a, b) {
+  const dt = (b.time - a.time) / 1000;
+  if (!(dt > 0)) return null;                       // no usable interval, nothing to judge
+  return map.distance([a.lat, a.lng], [b.lat, b.lng]) / dt;
+}
+
+function _trkPlausible(prev, p) {
+  if (_trkSpeeds.length < _TRK_SEED) return true;   // still seeding the reference
+  const v = _trkSpeed(prev, p);
+  if (v == null) return true;
+  const sorted = [..._trkSpeeds].sort((x, y) => x - y);
+  const median = sorted[(sorted.length - 1) >> 1];
+  return v <= Math.max(_TRK_FLOOR, median * _TRK_K);
+}
+
+function _trkReset() { _trkSpeeds = []; _trkHeld = []; }
+
 function updateTrack(ll, alt, ts) {
+  const p = { lat: ll.lat, lng: ll.lng, alt, time: ts };
+  const last = trackPoints[trackPoints.length - 1];
+
+  if (last && !_trkPlausible(last, p)) {
+    _trkHeld.push(p);
+    if (_trkHeld.length >= 2) {
+      /* Confirmation has to be geometric, not another speed test: a held fix is fast by
+         definition, so judging it again with the reference that rejected it would never
+         let a real move through. What separates movement from noise is whether the held
+         fixes agree with EACH OTHER more than with where the track still believes it is —
+         jitter scatters around the last accepted point and comes back, a real move walks
+         away from it and stays away together. */
+      const first    = _trkHeld[0];
+      const apart    = map.distance([first.lat, first.lng], [p.lat, p.lng]);
+      const fromLast = map.distance([last.lat,  last.lng ], [p.lat, p.lng]);
+      if (apart < fromLast) {
+        const held = _trkHeld;
+        _trkHeld = [];
+        held.forEach(_trkAdd);       // replayed in order: geometry and timestamps intact
+        return;
+      }
+      // Still scattered: pure noise. Keep only the newest as the next candidate, so the
+      // buffer cannot grow and the track can still resync later.
+      _trkHeld = [p];
+    }
+    return;
+  }
+
+  _trkHeld = [];
+  _trkAdd(p);
+}
+
+function _trkAdd(p) {
   if (trackPoints.length > 0) {
     const prev = trackPoints[trackPoints.length - 1];
-    trackDistance += map.distance([prev.lat, prev.lng], [ll.lat, ll.lng]);
+    trackDistance += map.distance([prev.lat, prev.lng], [p.lat, p.lng]);
+
+    const v = _trkSpeed(prev, p);
+    if (v != null) {
+      _trkSpeeds.push(v);
+      if (_trkSpeeds.length > _TRK_WIN) _trkSpeeds.shift();
+    }
 
     // Bearing in statusbar
-    const brg = calcBearing(prev.lat, prev.lng, ll.lat, ll.lng);
+    const brg = calcBearing(prev.lat, prev.lng, p.lat, p.lng);
     const dirs = ['N','NE','E','SE','S','SW','W','NW'];
     const dir  = dirs[Math.round(brg/45) % 8];
     const brgItem = document.getElementById('sb-brg-item');
@@ -436,15 +515,20 @@ function updateTrack(ll, alt, ts) {
       brgItem.style.display = '';
     }
   }
-  trackPoints.push({ lat: ll.lat, lng: ll.lng, alt, time: ts });
+  trackPoints.push(p);
 
-  const lls = trackPoints.map(p => [p.lat, p.lng]);
+  const lls = trackPoints.map(q => [q.lat, q.lng]);
   if (trackPolyline) trackPolyline.setLatLngs(lls);
   else trackPolyline = L.polyline(lls, { color: '#e05252', weight: 3, opacity: 0.85 }).addTo(map);
 
   document.getElementById('track-pts').textContent  = trackPoints.length;
-  const d = trackDistance;
-  document.getElementById('track-dist').textContent = d >= 1000 ? (d/1000).toFixed(2) + ' km' : Math.round(d) + ' m';
+  document.getElementById('track-dist').textContent = _trackLengthLabel(trackDistance);
+}
+
+/* Same wording on screen and in the exported file: a track whose panel says 1.23 km must
+   not export a different figure. Metres below 1 km, two decimals of a kilometre above. */
+function _trackLengthLabel(m) {
+  return m >= 1000 ? (m / 1000).toFixed(2) + ' km' : Math.round(m) + ' m';
 }
 
 function exportGPX() {
@@ -454,11 +538,15 @@ function exportGPX() {
     (p.alt != null ? `<ele>${p.alt.toFixed(1)}</ele>` : '') +
     `<time>${new Date(p.time).toISOString()}</time></trkpt>`
   ).join('\n');
+  /* Same summary the KML carries, so the two exports of one track do not describe it
+     differently. <desc> sits between <name> and <trkseg> because GPX 1.1 fixes that order. */
+  const lenLabel = _trackLengthLabel(trackDistance);
+  const nPts = trackPoints.length;
   showPromptModal('Nome del file:', 'track', fname => {
     const base = (((fname || 'track').trim() || 'track')).replace(/\.gpx$/i, '');
-    const gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GISCatasto" xmlns="http://www.topografix.com/GPX/1/1">\n  <trk><name>${_xmlEsc(base)}</name><trkseg>\n${pts}\n  </trkseg></trk>\n</gpx>`;
+    const gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GISCatasto" xmlns="http://www.topografix.com/GPX/1/1">\n  <trk><name>${_xmlEsc(base)}</name><desc>Lunghezza: ${lenLabel} — ${nPts} punti</desc><trkseg>\n${pts}\n  </trkseg></trk>\n</gpx>`;
     downloadFile(gpx, base + '.gpx', 'application/gpx+xml');
-  }, 'The .gpx file is saved to your device Downloads folder.');
+  }, 'Il file .gpx viene salvato nella cartella Download del dispositivo.');
 }
 
 document.getElementById('btn-track-toggle').addEventListener('click', () => {
@@ -466,6 +554,9 @@ document.getElementById('btn-track-toggle').addEventListener('click', () => {
   if (!trackActive && !gpsActive) { toastMsg('Attiva prima il GPS', 'error', undefined, 'sidebar'); return; }
   trackActive = !trackActive;
   if (trackActive) {
+    // A new session starts with no reference: the pace of the previous one says nothing
+    // about this one, and a stale one would judge the first fixes against the wrong bar.
+    _trkReset();
     btn.innerHTML = '<span class="track-rec-dot"></span>Ferma traccia';
     btn.style.background = 'var(--danger)';
     document.getElementById('track-stats').style.display = 'block';
@@ -485,7 +576,7 @@ document.getElementById('btn-track-toggle').addEventListener('click', () => {
       const hasAlt = trackPoints.length >= 2 && trackPoints.some(p => p.alt != null);
       document.getElementById('btn-track-profile').style.display = hasAlt ? 'block' : 'none';
     }
-    toastMsg('Traccia interrotta \u2014 ' + trackPoints.length + ' points', 'success', undefined, 'sidebar');
+    toastMsg('Traccia interrotta \u2014 ' + trackPoints.length + ' punti', 'success', undefined, 'sidebar');
     // Offer to save the recorded polyline as an editable shape (cancel = keep existing track preview)
     if (trackPoints.length >= 2) {
       // Snapshot points now — if the user re-starts recording while the prompt
@@ -533,12 +624,17 @@ function exportKML() {
   const coords = trackPoints.map(p =>
     p.lng.toFixed(6) + ',' + p.lat.toFixed(6) + (p.alt != null ? ',' + p.alt.toFixed(1) : ',0')
   ).join(' ');
+  /* Length travels twice on purpose: <description> is what an earth browser shows on click,
+     ExtendedData in raw metres is what a GIS can read back as a field. */
+  const lenLabel = _trackLengthLabel(trackDistance);
+  const lenMetres = trackDistance.toFixed(1);
+  const nPts = trackPoints.length;
   showPromptModal('Nome del file:', 'track', fname => {
     const base = (((fname || 'track').trim() || 'track')).replace(/\.kml$/i, '');
     const nm = _xmlEsc(base);
-    const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n  <Document>\n    <name>${nm}</name>\n    <Placemark>\n      <name>${nm}</name>\n      <LineString>\n        <tessellate>1</tessellate>\n        <altitudeMode>clampToGround</altitudeMode>\n        <coordinates>${coords}</coordinates>\n      </LineString>\n    </Placemark>\n  </Document>\n</kml>`;
+    const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n  <Document>\n    <name>${nm}</name>\n    <Placemark>\n      <name>${nm}</name>\n      <description>Lunghezza: ${lenLabel} — ${nPts} punti</description>\n      <ExtendedData>\n        <Data name="length_m"><displayName>Lunghezza (m)</displayName><value>${lenMetres}</value></Data>\n        <Data name="points"><displayName>Punti</displayName><value>${nPts}</value></Data>\n      </ExtendedData>\n      <LineString>\n        <tessellate>1</tessellate>\n        <altitudeMode>clampToGround</altitudeMode>\n        <coordinates>${coords}</coordinates>\n      </LineString>\n    </Placemark>\n  </Document>\n</kml>`;
     downloadFile(kml, base + '.kml', 'application/vnd.google-earth.kml+xml');
-  }, 'The .kml file is saved to your device Downloads folder.');
+  }, 'Il file .kml viene salvato nella cartella Download del dispositivo.');
 }
 
 document.getElementById('btn-track-export').addEventListener('click', exportGPX);
@@ -546,7 +642,7 @@ document.getElementById('btn-track-export-kml').addEventListener('click', export
 
 document.getElementById('btn-track-clear').addEventListener('click', () => {
   if (!confirm('Cancellare la traccia?')) return;
-  trackPoints = []; trackDistance = 0;
+  trackPoints = []; trackDistance = 0; _trkReset();
   if (trackPolyline) { map.removeLayer(trackPolyline); trackPolyline = null; }
   document.getElementById('track-pts').textContent  = '0';
   document.getElementById('track-dist').textContent = '0 m';

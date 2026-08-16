@@ -409,8 +409,8 @@
       const sizeStr = sizeMB >= 1024 ? sizeGB.toFixed(2) + ' GB' : Math.round(sizeMB) + ' MB';
 
       toastMsg(
-        found.toLocaleString() + '/' + total.toLocaleString() + ' tiles cached (' + pct + '%)' +
-        (missing > 0 ? ' — downloading ' + missing.toLocaleString() + ' missing\u2026' : ''),
+        found.toLocaleString() + '/' + total.toLocaleString() + ' tile in cache (' + pct + '%)' +
+        (missing > 0 ? ' — ne scarico ' + missing.toLocaleString() + ' mancanti\u2026' : ''),
         '', undefined, 'sidebar'
       );
 

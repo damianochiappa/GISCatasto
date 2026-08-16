@@ -12,6 +12,9 @@ disponibili senza connessione.
 
 [![Licenza: GPL v3](https://img.shields.io/badge/Licenza-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
+**Su Google Play:** [play.google.com/store/apps/details?id=com.geotool.giscatasto](https://play.google.com/store/apps/details?id=com.geotool.giscatasto)
+— [pagina del progetto](https://damianochiappa.github.io/GISCatasto/).
+
 Questo repository contiene il codice sorgente della versione pubblicata, come richiede la GPL v3.
 
 ---

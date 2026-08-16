@@ -1184,7 +1184,7 @@ const _WMSImageLayer = L.Layer.extend({
       // the overlay, so a failed load has no response body to inspect. Report it
       // anyway rather than leaving a blank pane with no explanation.
       _show(url);
-      if (this._overlay) this._overlay.once('error', () => _notifyErr('image could not be loaded'));
+      if (this._overlay) this._overlay.once('error', () => _notifyErr('immagine non caricata'));
     }
   }
 });
@@ -1390,7 +1390,7 @@ function _selExportKML() {
     const base = ((fname || 'selection').trim() || 'selection').replace(/\.kml$/i, '');
     downloadFile(tokml({ type:'FeatureCollection', features }, { simplestyle: true }),
       base + '.kml', 'application/vnd.google-earth.kml+xml');
-  }, 'The .kml file is saved to your device Downloads folder.');
+  }, 'Il file .kml viene salvato nella cartella Download del dispositivo.');
 }
 
 /* ===== ONBOARDING ===== */
@@ -1402,7 +1402,12 @@ function _selExportKML() {
   const skipBtn = document.getElementById('ob-skip');
   const guideBtn = document.getElementById('ob-guide-btn');
   if (!ob) return;
-  if (localStorage.getItem('giscatasto_onboarded')) return;
+  /* Guarded: this runs inside an IIFE, so a throw here would abort the rest of map.js —
+     _createLayer and _WFSLayer included. Storage being unreadable must cost the onboarding
+     flag, nothing else. */
+  let _obDone = false;
+  try { _obDone = !!localStorage.getItem('giscatasto_onboarded'); } catch (_) {}
+  if (_obDone) return;
 
   ob.classList.remove('hidden');
   let cur = 0;
@@ -1415,9 +1420,12 @@ function _selExportKML() {
     nextBtn.textContent = cur === total - 1 ? 'Fatto ✓' : 'Avanti ›';
   }
 
+  /* Hide first, remember second: this overlay is the only thing between the user and the
+     app, so a storage write that throws must not be able to trap them on it. Worst case
+     the onboarding shows once more on the next launch. */
   function _close() {
-    localStorage.setItem('giscatasto_onboarded', '1');
     ob.classList.add('hidden');
+    try { localStorage.setItem('giscatasto_onboarded', '1'); } catch (_) {}
   }
 
   nextBtn.addEventListener('click', () => { cur < total - 1 ? _goTo(cur + 1) : _close(); });
@@ -1571,7 +1579,7 @@ const _WFSLayer = L.Layer.extend({
     // Agenzia Entrate cadastral WFS does not support server-side FILTER (see _update), so a global
     // find by attribute is impossible — features can only be located by panning into their bbox.
     if (/^CP:(CadastralParcel|CadastralZoning)$/i.test(this.options.typeName || '')) {
-      callback(null, 'server does not support filter — pan/zoom near the parcel');
+      callback(null, 'il server non supporta il filtro — sposta o zooma vicino alla particella');
       return;
     }
     const ver  = parseFloat(this.options.version || '2.0');
@@ -2064,11 +2072,11 @@ const _WFSLayer = L.Layer.extend({
     if (window.cordova && cordova.plugin && cordova.plugin.http) {
       cordova.plugin.http.sendRequest(url, { method:'get', responseType:'arraybuffer' },
         res => _parse(_decodeXmlBuffer(res.data)),
-        () => { if (reqId === this._reqId) _loadToast(this._name() + ': request failed', 'error'); }
+        () => { if (reqId === this._reqId) _loadToast(this._name() + ': richiesta non riuscita', 'error'); }
       );
     } else {
       fetch(url).then(r => r.arrayBuffer()).then(buf => _parse(_decodeXmlBuffer(buf)))
-        .catch(() => { if (reqId === this._reqId) _loadToast(this._name() + ': request failed', 'error'); });
+        .catch(() => { if (reqId === this._reqId) _loadToast(this._name() + ': richiesta non riuscita', 'error'); });
     }
   }
 });

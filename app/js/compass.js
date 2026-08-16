@@ -51,7 +51,7 @@
     onAdd() {
       const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-compass');
       const a   = L.DomUtil.create('a', '', div);
-      a.href = '#'; a.title = 'Compass — tap to reset map to north';
+      a.href = '#'; a.title = 'Bussola — tocca per riorientare la mappa a nord';
       a.innerHTML =
         '<svg id="compass-svg" width="20" height="20" viewBox="0 0 24 24" style="display:block;transition:transform .15s ease">' +
           '<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.35"/>' +

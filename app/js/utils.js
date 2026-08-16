@@ -245,6 +245,72 @@ function showPromptModal(message, defaultValue, onConfirm, hint) {
   setTimeout(() => { inp.focus(); inp.select(); }, 80);
 }
 
+/* Confirmation modal with an optional "don't show this again" tick.
+   The native confirm() cannot carry that tick, and the tick is the point: this dialog
+   guards a click people make deliberately, so asking forever would only train them to
+   dismiss it unread. When opts.rememberKey has been set the dialog is skipped entirely
+   and onConfirm runs straight away — the caller stays a single call either way.
+   opts: { rememberKey, rememberLabel, okLabel, cancelLabel, danger } */
+function showConfirmModal(message, onConfirm, opts) {
+  opts = opts || {};
+  if (opts.rememberKey) {
+    let silenced = false;
+    try { silenced = localStorage.getItem(opts.rememberKey) === '1'; } catch (_) {}
+    if (silenced) { if (onConfirm) onConfirm(); return; }
+  }
+  let modal = document.getElementById('confirm-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'confirm-modal';
+    modal.className = 'modal-backdrop';
+    modal.innerHTML =
+      '<div class="modal-box">' +
+        '<p id="confirm-modal-msg" style="margin-bottom:12px;font-size:13px;line-height:1.5"></p>' +
+        '<label id="confirm-modal-remember-row" style="display:none;align-items:flex-start;gap:7px;margin:0 0 12px;font-size:12px;line-height:1.4;cursor:pointer">' +
+          '<input type="checkbox" id="confirm-modal-remember" style="margin-top:2px;flex:none">' +
+          '<span id="confirm-modal-remember-label"></span>' +
+        '</label>' +
+        '<div class="modal-btns">' +
+          '<button class="btn btn-secondary" id="confirm-modal-cancel"></button>' +
+          '<button class="btn" id="confirm-modal-ok"></button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(modal);
+    const _close = () => { modal.style.display = 'none'; };
+    document.getElementById('confirm-modal-cancel').addEventListener('click', _close);
+    document.getElementById('confirm-modal-ok').addEventListener('click', () => {
+      _close();
+      const chk = document.getElementById('confirm-modal-remember');
+      /* Remembered only on confirm: ticking the box and then cancelling means "not this
+         time, and stop asking", which would silence a dialog never actually accepted. */
+      if (chk && chk.checked && modal._key) { try { localStorage.setItem(modal._key, '1'); } catch (_) {} }
+      if (modal._cb) modal._cb();
+    });
+    modal.addEventListener('click', e => { if (e.target === modal) _close(); });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && modal.style.display === 'flex') _close();
+    });
+  }
+  document.getElementById('confirm-modal-msg').textContent = message;
+  const okBtn = document.getElementById('confirm-modal-ok');
+  okBtn.textContent = opts.okLabel || 'OK';
+  okBtn.className = 'btn ' + (opts.danger === false ? 'btn-primary' : 'btn-danger');
+  document.getElementById('confirm-modal-cancel').textContent = opts.cancelLabel || 'Annulla';
+  const row = document.getElementById('confirm-modal-remember-row');
+  const chk = document.getElementById('confirm-modal-remember');
+  chk.checked = false;
+  if (opts.rememberKey) {
+    document.getElementById('confirm-modal-remember-label').textContent =
+      opts.rememberLabel || 'Non mostrare più questo messaggio';
+    row.style.display = 'flex';
+  } else {
+    row.style.display = 'none';
+  }
+  modal._cb  = onConfirm;
+  modal._key = opts.rememberKey || null;
+  modal.style.display = 'flex';
+}
+
 /* Two-field modal for editing a WFS layer filter (attribute + values).
    Empty both = clear filter. Only one of the two filled = invalid, blocked. */
 function showFilterEditModal(currentAttr, currentVals, onConfirm) {
