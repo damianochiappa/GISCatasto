@@ -104,10 +104,18 @@
   function _exportRouteKML() {
     if (!navRouteCoords.length) { toastMsg('Nessun percorso da esportare', 'error', undefined, 'sidebar'); return; }
     const coords = navRouteCoords.map(c => c[1].toFixed(6) + ',' + c[0].toFixed(6) + ',0').join(' ');
+    /* navRouteCoords is [lat, lng]; GeoJSON wants the other order. */
+    const routeFeature = { type: 'Feature', properties: {},
+      geometry: { type: 'LineString', coordinates: navRouteCoords.map(c => [c[1], c[0]]) } };
+    const ATTRIB = 'Route © OpenStreetMap contributors (ODbL); routing by OSRM / FOSSGIS';
+    const desc = _xmlEsc(ATTRIB + '<br/><br/>' + geomDescriptionHtml(routeFeature));
+    const geomData = Object.entries(geomProps(routeFeature))
+      .map(([k, v]) => `\n        <Data name="${_xmlEsc(k)}"><value>${_xmlEsc(String(v))}</value></Data>`)
+      .join('');
     showPromptModal('Nome del file:', 'route', fname => {
       const base = (((fname || 'route').trim() || 'route')).replace(/\.kml$/i, '');
       const nm = _xmlEsc(base);
-      const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n  <Document>\n    <name>${nm}</name>\n    <Placemark>\n      <name>${nm}</name>\n      <Style><LineStyle><color>fff78e4f</color><width>4</width></LineStyle></Style>\n      <description>Route © OpenStreetMap contributors (ODbL); routing by OSRM / FOSSGIS</description>\n      <LineString>\n        <tessellate>1</tessellate>\n        <altitudeMode>clampToGround</altitudeMode>\n        <coordinates>${coords}</coordinates>\n      </LineString>\n    </Placemark>\n  </Document>\n</kml>`;
+      const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n  <Document>\n    <name>${nm}</name>\n    <Placemark>\n      <name>${nm}</name>\n      <Style><LineStyle><color>fff78e4f</color><width>4</width></LineStyle></Style>\n      <description>${desc}</description>\n      <ExtendedData>${geomData}\n      </ExtendedData>\n      <LineString>\n        <tessellate>1</tessellate>\n        <altitudeMode>clampToGround</altitudeMode>\n        <coordinates>${coords}</coordinates>\n      </LineString>\n    </Placemark>\n  </Document>\n</kml>`;
       downloadFile(kml, base + '.kml', 'application/vnd.google-earth.kml+xml');
     }, 'Il .kml viene salvato nella cartella Download del dispositivo. Funziona offline.');
   }

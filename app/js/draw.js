@@ -66,17 +66,10 @@ function _openDrawPopup(layer, type) {
   const popup = document.createElement('div');
   popup.style.minWidth = '210px';
 
-  const area = calcArea(layer);
-  const len  = calcLength(layer);
-  let infoHtml = '';
-  if (area) infoHtml += `<div class="r-label">Area: <span class="r-val">${area}</span></div>`;
-  if (len)  infoHtml += `<div class="r-label">Length: <span class="r-val">${len}</span></div>`;
-  if (infoHtml) {
-    const infoDiv = document.createElement('div');
-    infoDiv.innerHTML = infoHtml;
-    infoDiv.style.cssText = 'margin-bottom:6px;font-size:12px';
-    popup.appendChild(infoDiv);
-  }
+  /* Full readout rather than the old Area/Length pair: a marker used to show nothing at all,
+     and a polygon's "Length" was its perimeter under the wrong name. */
+  const infoSec = geomInfoSectionForLayer(layer);
+  if (infoSec) { infoSec.style.marginTop = '0'; infoSec.style.borderTop = 'none'; infoSec.style.paddingTop = '0'; popup.appendChild(infoSec); }
 
   const nameInput = document.createElement('input');
   nameInput.type = 'text'; nameInput.className = 'draw-desc-input';
@@ -174,7 +167,8 @@ function _openDrawPopup(layer, type) {
     _applySimpleStyle(json.properties, layer);
     layer._geoName = json.properties.name;
     layer._geoDesc = json.properties.description;
-    const kml  = tokml(json, { simplestyle: true });
+    stampGeomInfo(json);
+    const kml  = tokml(json, TOKML_OPTS);
     const safe = json.properties.name.replace(/[^\w\-]/g, '_');
     const baseName = (filenameInput.value.trim() || safe || 'shape').replace(/\.kml$/i, '');
     downloadFile(kml, baseName + '.kml', 'application/vnd.google-earth.kml+xml');
@@ -241,8 +235,8 @@ function _refreshDrawButtons() {
 }
 _refreshDrawButtons();
 
-/* Inject simplestyle-spec props from layer style so tokml({simplestyle:true})
-   emits <LineStyle>/<PolyStyle>. Skips markers (no line/poly style applies). */
+/* Inject simplestyle-spec props from layer style so tokml(_, TOKML_OPTS) emits
+   <LineStyle>/<PolyStyle>. Skips markers (no line/poly style applies). */
 function _applySimpleStyle(props, layer) {
   if (!layer) return;
   const color = layer._geoColor || '#4f8ef7';
@@ -263,7 +257,7 @@ function _applySimpleStyle(props, layer) {
 /* Same as above but for a raw GeoJSON feature with no Leaflet layer behind it (WFS
    selection, dissolve result): takes colour + opacity directly and injects simplestyle
    props, so those exports carry symbology into Google Earth instead of rendering as the
-   default white/opaque. tokml({simplestyle:true}) then emits Poly/Line/IconStyle. */
+   default white/opaque. tokml(_, TOKML_OPTS) then emits Poly/Line/IconStyle. */
 function _styleFeatureForKml(f, color, opacity) {
   if (!f) return;
   f.properties = f.properties || {};
@@ -275,20 +269,8 @@ function _styleFeatureForKml(f, color, opacity) {
   if (/Polygon/.test(gt)) { f.properties.fill = color; f.properties['fill-opacity'] = opacity * 0.3; }
 }
 
-function layerToGeoJSON(layer) {
-  if (layer instanceof L.Circle) {
-    const c = layer.getLatLng(), r = layer.getRadius(), n = 64, pts = [];
-    for (let i=0; i<n; i++) {
-      const angle = (i/n) * 2 * Math.PI;
-      const dLat  = (r * Math.cos(angle)) / 111320;
-      const dLon  = (r * Math.sin(angle)) / (111320 * Math.cos(c.lat * Math.PI/180));
-      pts.push([c.lng+dLon, c.lat+dLat]);
-    }
-    pts.push(pts[0]);
-    return { type:'Feature', geometry:{ type:'Polygon', coordinates:[pts] }, properties:{} };
-  }
-  return layer.toGeoJSON();
-}
+/* layerToGeoJSON lives in utils.js: the popups and the exports both need it, and it is the
+   place where a circle is turned into the polygon that actually leaves the app. */
 
 /* ===== EXPORT ALL ===== */
 document.getElementById('btn-export-all-kml').addEventListener('click', () => {
@@ -301,9 +283,9 @@ document.getElementById('btn-export-all-kml').addEventListener('click', () => {
       if (l._geoName) f.properties.name = l._geoName;
       if (l._geoDesc) f.properties.description = l._geoDesc;
       _applySimpleStyle(f.properties, l);
-      return f;
+      return stampGeomInfo(f);
     });
-    downloadFile(tokml({ type:'FeatureCollection', features }, { simplestyle: true }),
+    downloadFile(tokml({ type:'FeatureCollection', features }, TOKML_OPTS),
       base + '.kml', 'application/vnd.google-earth.kml+xml');
   });
 });
@@ -321,7 +303,9 @@ document.getElementById('btn-export-all-geojson').addEventListener('click', () =
       if (l._geoIcon)  f.properties.icon     = l._geoIcon;
       if (l._geoType)  f.properties.drawType = l._geoType;
       if (l._geoOpacity !== undefined) f.properties.opacity = l._geoOpacity;
-      return f;
+      /* No description block in GeoJSON: the raw fields are the readable form here, and a
+         consumer reading `description` wants the user's text, not a rendered table. */
+      return stampGeomInfo(f, { description: false });
     });
     downloadFile(JSON.stringify({ type:'FeatureCollection', features }, null, 2), fname + '.geojson', 'application/json');
   });
@@ -624,15 +608,21 @@ function exportKML() {
   const coords = trackPoints.map(p =>
     p.lng.toFixed(6) + ',' + p.lat.toFixed(6) + (p.alt != null ? ',' + p.alt.toFixed(1) : ',0')
   ).join(' ');
-  /* Length travels twice on purpose: <description> is what an earth browser shows on click,
-     ExtendedData in raw metres is what a GIS can read back as a field. */
-  const lenLabel = _trackLengthLabel(trackDistance);
-  const lenMetres = trackDistance.toFixed(1);
+  /* The readout travels twice on purpose: <description> is what an earth browser shows on
+     click, ExtendedData in raw metres is what a GIS can read back as a field. Both come from
+     the shared helper now, so a track reports the same fields as every other export. */
   const nPts = trackPoints.length;
+  const trackFeature = { type: 'Feature', properties: {},
+    geometry: { type: 'LineString', coordinates: trackPoints.map(p => [p.lng, p.lat]) } };
+  const geomDesc = _xmlEsc(geomDescriptionHtml(trackFeature));
+  const geomData = Object.entries(geomProps(trackFeature))
+    .concat([['points', nPts]])
+    .map(([k, v]) => `\n        <Data name="${_xmlEsc(k)}"><value>${_xmlEsc(String(v))}</value></Data>`)
+    .join('');
   showPromptModal('Nome del file:', 'track', fname => {
     const base = (((fname || 'track').trim() || 'track')).replace(/\.kml$/i, '');
     const nm = _xmlEsc(base);
-    const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n  <Document>\n    <name>${nm}</name>\n    <Placemark>\n      <name>${nm}</name>\n      <description>Lunghezza: ${lenLabel} — ${nPts} punti</description>\n      <ExtendedData>\n        <Data name="length_m"><displayName>Lunghezza (m)</displayName><value>${lenMetres}</value></Data>\n        <Data name="points"><displayName>Punti</displayName><value>${nPts}</value></Data>\n      </ExtendedData>\n      <LineString>\n        <tessellate>1</tessellate>\n        <altitudeMode>clampToGround</altitudeMode>\n        <coordinates>${coords}</coordinates>\n      </LineString>\n    </Placemark>\n  </Document>\n</kml>`;
+    const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n  <Document>\n    <name>${nm}</name>\n    <Placemark>\n      <name>${nm}</name>\n      <description>${geomDesc}</description>\n      <ExtendedData>${geomData}\n      </ExtendedData>\n      <LineString>\n        <tessellate>1</tessellate>\n        <altitudeMode>clampToGround</altitudeMode>\n        <coordinates>${coords}</coordinates>\n      </LineString>\n    </Placemark>\n  </Document>\n</kml>`;
     downloadFile(kml, base + '.kml', 'application/vnd.google-earth.kml+xml');
   }, 'Il file .kml viene salvato nella cartella Download del dispositivo.');
 }

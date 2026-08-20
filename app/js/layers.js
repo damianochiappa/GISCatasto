@@ -561,11 +561,22 @@ function enhanceKMLSublayer(layer) {
   div.style.minWidth = '210px';
 
   const kmlProps = layer._kmlProps;
-  if (kmlProps && Object.keys(kmlProps).length) {
+  /* Two kinds of key are hidden from the attribute table: the ones this app generated on a
+     previous export (they are recomputed in the geometry section below, and a stale copy
+     next to a fresh one is worse than no copy) and the simplestyle keys, which tokml drops
+     into ExtendedData along with everything else and which mean nothing to the user. */
+  const _hidden = GEOM_PROP_KEYS.concat(STYLE_PROP_KEYS);
+  const _visible = kmlProps
+    ? Object.entries(kmlProps).filter(([k]) => _hidden.indexOf(k) === -1)
+    : [];
+  if (_visible.length) {
     const propsDiv = document.createElement('div');
     propsDiv.style.cssText = 'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)';
-    const rows = Object.entries(kmlProps)
-      .map(([k,v]) => `<tr><td style="opacity:.65;padding-right:8px;font-size:11px;font-family:monospace;white-space:nowrap">${k}</td><td style="font-size:11px;font-family:monospace">${v ?? ''}</td></tr>`)
+    const rows = _visible
+      .map(([k,v]) => {
+        const val = k === 'description' ? stripGeomDescription(v) : (v ?? '');
+        return `<tr><td style="opacity:.65;padding-right:8px;font-size:11px;font-family:monospace;white-space:nowrap">${k}</td><td style="font-size:11px;font-family:monospace">${val}</td></tr>`;
+      })
       .join('');
     const tbl = document.createElement('table');
     tbl.style.cssText = 'width:100%;margin-bottom:2px';
@@ -574,9 +585,17 @@ function enhanceKMLSublayer(layer) {
     div.appendChild(propsDiv);
   } else if (existingHTML) {
     const info = document.createElement('div');
-    info.innerHTML = existingHTML;
+    info.innerHTML = stripGeomDescription(existingHTML);
     info.style.cssText = 'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border);font-size:12px';
     div.appendChild(info);
+  }
+
+  // Measurements of the geometry as loaded, computed here rather than trusted from the file.
+  const geomSec = geomInfoSectionForLayer(layer);
+  if (geomSec) {
+    // The attribute block above already draws a rule; two adjacent lines look like a glitch.
+    if (div.childNodes.length) { geomSec.style.borderTop = 'none'; geomSec.style.paddingTop = '0'; geomSec.style.marginTop = '0'; }
+    div.appendChild(geomSec);
   }
 
   // Per-feature style controls were removed: color/weight/opacity for KML
@@ -785,6 +804,42 @@ function _flattenKMLLeafLayers(group, result) {
   return result;
 }
 
+/* Popup for a GeoJSON/GPX feature: every attribute the file carries, then the measurements.
+   It used to fire only when the feature had a name or a description, which meant a plain
+   GeoJSON — no such fields, and there is no reason for one to have them — opened no popup at
+   all and looked inert. Attribute values are escaped: unlike the KML path, whose values come
+   from ExtendedData this app wrote, these can be arbitrary strings from any file. */
+function _bindFeaturePopup(feature, layer) {
+  const div = document.createElement('div');
+  div.style.minWidth = '210px';
+  const props = feature && feature.properties;
+  const hidden = GEOM_PROP_KEYS.concat(STYLE_PROP_KEYS);
+  const visible = props
+    ? Object.entries(props).filter(([k, v]) => hidden.indexOf(k) === -1 && v !== null && v !== '' && typeof v !== 'object')
+    : [];
+  if (visible.length) {
+    const propsDiv = document.createElement('div');
+    propsDiv.style.cssText = 'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)';
+    const tbl = document.createElement('table');
+    tbl.style.cssText = 'width:100%;font-size:11px;font-family:monospace';
+    tbl.innerHTML = visible.map(([k, v]) => {
+      const val = k === 'description' ? stripGeomDescription(v) : v;
+      return `<tr><td style="opacity:.65;padding-right:8px;white-space:nowrap">${_xmlEsc(k)}</td><td>${_xmlEsc(val)}</td></tr>`;
+    }).join('');
+    propsDiv.appendChild(tbl);
+    div.appendChild(propsDiv);
+  }
+  const geomSec = geomInfoSection(feature);
+  if (geomSec) {
+    if (div.childNodes.length) { geomSec.style.borderTop = 'none'; geomSec.style.paddingTop = '0'; geomSec.style.marginTop = '0'; }
+    div.appendChild(geomSec);
+  }
+  if (!div.childNodes.length) return;
+  L.DomEvent.disableClickPropagation(div);
+  L.DomEvent.disableScrollPropagation(div);
+  layer.bindPopup(div, { maxWidth: 280 });
+}
+
 /* ===== SHARED LAYER BUILDER ===== */
 /* Parses content into a Leaflet layer and adds it to the list.
    listOpts: passed directly to addLayerToList (opacity, visible, onStateChange, onDelete, noZoom, silent). */
@@ -806,14 +861,7 @@ function _addContentLayer(content, name, mime, listOpts) {
     const layer = L.geoJSON(geoData, {
       style: { color: '#4f8ef7', weight: 2, fillOpacity: 0.3 },
       pointToLayer: (f, ll) => L.circleMarker(ll, { radius: 6, color: '#4f8ef7' }),
-      onEachFeature: (f, l) => {
-        const props = f.properties;
-        if (props) {
-          const nm = props.name || props.Name || '';
-          const desc = props.description || '';
-          if (nm || desc) l.bindPopup(`<b>${nm}</b>${desc ? '<br>' + desc : ''}`);
-        }
-      }
+      onEachFeature: (f, l) => _bindFeaturePopup(f, l)
     });
     addLayerToList(layer, name, content, mime, listOpts);
   } else if (mime.includes('gpx')) {
@@ -821,7 +869,8 @@ function _addContentLayer(content, name, mime, listOpts) {
     const geoData = toGeoJSON.gpx(gpxDoc);
     const layer = L.geoJSON(geoData, {
       style: { color: '#f0a830', weight: 3 },
-      pointToLayer: (f, ll) => L.circleMarker(ll, { radius: 5, color: '#f0a830' })
+      pointToLayer: (f, ll) => L.circleMarker(ll, { radius: 5, color: '#f0a830' }),
+      onEachFeature: (f, l) => _bindFeaturePopup(f, l)
     });
     addLayerToList(layer, name, content, mime, listOpts);
   } else {
@@ -1176,6 +1225,9 @@ function _saveKmlEdit() {
       if (!gj) return;
       gj.properties = gj.properties || {};
       if (l._kmlProps) Object.assign(gj.properties, l._kmlProps);
+      /* Stamped after the merge, not before: _kmlProps carries the measurements of the shape
+         as it was loaded, and the whole point of this pass is that the shape just changed. */
+      stampGeomInfo(gj);
       features.push(gj);
     } catch(_) {}
   });
@@ -1376,7 +1428,9 @@ function _proceedDissolve() {
             modal.classList.add('hidden');
             result.properties = { name, description: desc };
             if (typeof _styleFeatureForKml === 'function') _styleFeatureForKml(result, '#4f8ef7', 1);
-            const kmlContent = tokml({ type: 'FeatureCollection', features: [result] }, { simplestyle: true });
+            // The merged area is the point of a dissolve, so it ships with the file.
+            stampGeomInfo(result);
+            const kmlContent = tokml({ type: 'FeatureCollection', features: [result] }, TOKML_OPTS);
             _loadAndPersist(kmlContent, name + '.kml', 'application/vnd.google-earth.kml+xml');
             downloadFile(kmlContent, name + '.kml', 'application/vnd.google-earth.kml+xml');
             toastMsg('Layer caricato: ' + name, 'success', undefined, 'sidebar');

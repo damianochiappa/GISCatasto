@@ -370,28 +370,286 @@ function fallbackCopy(text) {
   document.body.removeChild(ta);
 }
 
-function calcArea(layer) {
-  if (typeof L.GeometryUtil === 'undefined') return null;
-  const latlngs = layer.getLatLngs ? layer.getLatLngs() : null;
-  if (!latlngs) return null;
+/* ===== GEOMETRY INFO =====
+   One source of truth for the geometric readout: the same numbers feed the in-app popups
+   and the <description> + ExtendedData of every exported KML and GeoJSON, so a shape reads
+   the same in the app as it does in an earth browser.
+   Two outputs on purpose \u2014 the track export already worked this way: the rows are labelled
+   and rounded for a human, the props are raw metres and degrees under stable English keys
+   so a GIS can read them back as fields. */
+
+/* Property keys written by geomProps(). Listed once so an export can strip them before
+   recomputing \u2014 an edited shape must not inherit the numbers of the shape it used to be \u2014
+   and so the attribute tables in the popups can hide them: the same values are shown,
+   recomputed, in the geometry section right below. */
+const GEOM_PROP_KEYS = ['geom_type', 'area_m2', 'perimeter_m', 'length_m', 'radius_m',
+                        'vertices', 'parts', 'rings', 'lat', 'lon', 'mgrs', 'utm', 'crs',
+                        'centroid_lat', 'centroid_lon'];
+
+/* simplestyle-spec keys. tokml writes *every* property into ExtendedData, styling included,
+   so a file that has been through an export carries these back in. Noise in a table. */
+const STYLE_PROP_KEYS = ['stroke', 'stroke-opacity', 'stroke-width', 'fill', 'fill-opacity',
+                         'marker-color', 'marker-size', 'marker-symbol'];
+
+const GEOM_LABELS = {
+  section: 'Geometria', type: 'Tipo', area: 'Area', perimeter: 'Perimetro', length: 'Lunghezza',
+  radius: 'Raggio', vertices: 'Vertici', parts: 'Parti', rings: 'Anelli', centroid: 'Centroide',
+  lat: 'Latitudine', lon: 'Longitudine', dms: 'Lat/Lon', mgrs: 'MGRS', utm: 'UTM', crs: 'CRS'
+};
+const GEOM_TYPE_LABELS = {
+  Point: 'Punto', MultiPoint: 'Multi-punto', LineString: 'Linea', MultiLineString: 'Multi-linea',
+  Polygon: 'Poligono', MultiPolygon: 'Multi-poligono', GeometryCollection: 'Collezione'
+};
+/* tokml fills in its defaults only when `options` is falsy, so a call passing
+   { simplestyle: true } and nothing else leaves options.name and options.description
+   undefined and quietly emits neither tag: the placemark reaches Google Earth unnamed, with
+   an empty balloon, the name surviving only as an ExtendedData row. Every call site passes
+   this object instead of a bare { simplestyle: true }. */
+const TOKML_OPTS = { simplestyle: true, name: 'name', description: 'description' };
+
+/* Marks the generated block inside <description> so an export \u2192 import \u2192 export round trip
+   replaces it instead of stacking a second copy under the first. */
+const GEOM_DESC_MARK = '<!--geom-->';
+const GEOM_CRS_LABEL = 'WGS 84 (EPSG:4326)';
+
+function fmtArea(m2) {
+  if (!(m2 > 0)) return null;
+  if (m2 < 10000) return m2.toFixed(1) + ' m\u00b2';
+  if (m2 < 1e6)   return (m2/10000).toFixed(2) + ' ha';
+  return (m2/1e6).toFixed(3) + ' km\u00b2';
+}
+function fmtLength(m) {
+  if (!(m > 0)) return null;
+  if (m < 1000) return m.toFixed(1) + ' m';
+  return (m/1000).toFixed(3) + ' km';
+}
+
+const _coordLatLng = c => L.latLng(c[1], c[0]);
+
+/* Geodesic length of a coordinate array. GeoJSON rings arrive closed (last repeats first),
+   so a polygon perimeter needs no special case here \u2014 which is precisely what the old
+   calcLength() got wrong: it measured Leaflet's open ring and dropped the closing leg. */
+function _coordsLength(coords) {
+  let total = 0;
+  for (let i = 1; i < coords.length; i++)
+    total += _coordLatLng(coords[i-1]).distanceTo(_coordLatLng(coords[i]));
+  return total;
+}
+function _ringArea(ring) {
+  if (typeof L.GeometryUtil === 'undefined') return 0;
+  return L.GeometryUtil.geodesicArea(ring.map(_coordLatLng));
+}
+
+/* Raw geodesic measures for a GeoJSON geometry, in metres. Multi* parts are summed and a
+   polygon's holes are subtracted from the area \u2014 a parcel with a courtyard has to report
+   the area the land registry reports, not the area of its outline. */
+function geomMeasure(geom) {
+  const out = { type: (geom && geom.type) || '', area: 0, perimeter: 0, length: 0,
+                vertices: 0, parts: 0, rings: 0 };
+  const polys = [], lines = [];
+  (function walk(g) {
+    if (!g) return;
+    const c = g.coordinates;
+    switch (g.type) {
+      case 'GeometryCollection': (g.geometries || []).forEach(walk); break;
+      case 'MultiPolygon':    (c || []).forEach(p => polys.push(p)); break;
+      case 'Polygon':         polys.push(c || []); break;
+      case 'MultiLineString': (c || []).forEach(l => lines.push(l)); break;
+      case 'LineString':      lines.push(c || []); break;
+      case 'MultiPoint':      (c || []).forEach(() => { out.parts++; out.vertices++; }); break;
+      case 'Point':           out.parts++; out.vertices++; break;
+    }
+  })(geom);
+  polys.forEach(rings => {
+    out.parts++;
+    rings.forEach((ring, i) => {
+      out.rings++;
+      out.vertices  += Math.max(0, ring.length - 1);   // closed ring: last repeats the first
+      out.perimeter += _coordsLength(ring);
+      out.area      += (i === 0 ? 1 : -1) * _ringArea(ring);
+    });
+  });
+  lines.forEach(coords => {
+    out.parts++;
+    out.vertices += coords.length;
+    out.length   += _coordsLength(coords);
+  });
+  if (out.area < 0) out.area = 0;
+  return out;
+}
+
+function _firstCoord(geom) {
+  let c = geom && geom.coordinates;
+  while (Array.isArray(c) && Array.isArray(c[0])) c = c[0];
+  return (Array.isArray(c) && isFinite(c[0]) && isFinite(c[1])) ? c : null;
+}
+
+/* Area centroid, turf being loaded already for the dissolve. No fallback on purpose: the
+   centre of a bounding box is not a centroid, and labelling it as one would misstate a
+   number the user is going to navigate to. Without turf the row is simply dropped. */
+function _centroidCoord(feature) {
   try {
-    const flat = Array.isArray(latlngs[0]) ? latlngs[0] : latlngs;
-    const area = L.GeometryUtil.geodesicArea(flat);
-    if (area < 10000) return area.toFixed(1) + ' m\u00b2';
-    if (area < 1e6)   return (area/10000).toFixed(2) + ' ha';
-    return (area/1e6).toFixed(3) + ' km\u00b2';
-  } catch(e) { return null; }
+    if (typeof turf === 'undefined' || !turf.centerOfMass) return null;
+    return _firstCoord(turf.centerOfMass(feature).geometry);
+  } catch(_) { return null; }
+}
+
+/* GeoJSON for any Leaflet layer. A circle becomes the same 64-gon the export writes, so the
+   area in the popup is the area of the geometry that actually leaves the app rather than a
+   pi*r^2 no consumer of the file could reproduce; radius_m carries the exact value. */
+function layerToGeoJSON(layer) {
+  if (layer instanceof L.Circle) {
+    const c = layer.getLatLng(), r = layer.getRadius(), n = 64, pts = [];
+    for (let i=0; i<n; i++) {
+      const angle = (i/n) * 2 * Math.PI;
+      const dLat  = (r * Math.cos(angle)) / 111320;
+      const dLon  = (r * Math.sin(angle)) / (111320 * Math.cos(c.lat * Math.PI/180));
+      pts.push([c.lng+dLon, c.lat+dLat]);
+    }
+    pts.push(pts[0]);
+    return { type:'Feature', geometry:{ type:'Polygon', coordinates:[pts] },
+             properties:{ radius_m: +r.toFixed(2) } };
+  }
+  return layer.toGeoJSON();
+}
+
+/* Labelled rows for a popup, and for the <description> of an exported file. */
+function geomInfoRows(feature) {
+  const geom = feature && feature.geometry;
+  if (!geom || !geom.type) return [];
+  const m = geomMeasure(geom);
+  const props = feature.properties || {};
+  const rows = [[GEOM_LABELS.type, GEOM_TYPE_LABELS[m.type] || m.type]];
+  if (/Point$/.test(m.type)) {
+    const c = _firstCoord(geom);
+    if (c) {
+      rows.push([GEOM_LABELS.lat, c[1].toFixed(6)]);
+      rows.push([GEOM_LABELS.lon, c[0].toFixed(6)]);
+      rows.push([GEOM_LABELS.dms, latToDMS(c[1]) + ' ' + lonToDMS(c[0])]);
+      const mg = mgrsForward(c[0], c[1]);
+      if (mg && mg !== '--') rows.push([GEOM_LABELS.mgrs, mg]);
+      const u = UTM.fromLatLng({ lat: c[1], lng: c[0] });
+      if (u) rows.push([GEOM_LABELS.utm, u.zone + ' ' + u.x + ' ' + u.y]);
+    }
+  } else {
+    const a = fmtArea(m.area), p = fmtLength(m.perimeter), l = fmtLength(m.length);
+    if (a) rows.push([GEOM_LABELS.area, a]);
+    if (p) rows.push([GEOM_LABELS.perimeter, p]);
+    if (l) rows.push([GEOM_LABELS.length, l]);
+    const r = parseFloat(props.radius_m);
+    if (isFinite(r) && r > 0) rows.push([GEOM_LABELS.radius, fmtLength(r)]);
+    if (m.vertices) rows.push([GEOM_LABELS.vertices, String(m.vertices)]);
+    const cc = _centroidCoord(feature);
+    if (cc) rows.push([GEOM_LABELS.centroid, cc[1].toFixed(6) + ', ' + cc[0].toFixed(6)]);
+  }
+  if (m.parts > 1)        rows.push([GEOM_LABELS.parts, String(m.parts)]);
+  if (m.rings > m.parts)  rows.push([GEOM_LABELS.rings, String(m.rings)]);
+  rows.push([GEOM_LABELS.crs, GEOM_CRS_LABEL]);
+  return rows;
+}
+
+/* The machine-readable half: raw metres and degrees, English keys, so the values survive as
+   fields in a GIS instead of only as balloon text. */
+function geomProps(feature) {
+  const geom = feature && feature.geometry;
+  if (!geom || !geom.type) return {};
+  const m = geomMeasure(geom);
+  const props = feature.properties || {};
+  const out = { geom_type: m.type, crs: 'EPSG:4326' };
+  if (/Point$/.test(m.type)) {
+    const c = _firstCoord(geom);
+    if (c) {
+      out.lon = +c[0].toFixed(8);
+      out.lat = +c[1].toFixed(8);
+      const mg = mgrsForward(c[0], c[1]);
+      if (mg && mg !== '--') out.mgrs = mg;
+      const u = UTM.fromLatLng({ lat: c[1], lng: c[0] });
+      if (u) out.utm = u.zone + ' ' + u.x + ' ' + u.y;
+    }
+  } else {
+    if (m.area > 0)      out.area_m2     = +m.area.toFixed(2);
+    if (m.perimeter > 0) out.perimeter_m = +m.perimeter.toFixed(2);
+    if (m.length > 0)    out.length_m    = +m.length.toFixed(2);
+    const r = parseFloat(props.radius_m);
+    if (isFinite(r) && r > 0) out.radius_m = +r.toFixed(2);
+    if (m.vertices) out.vertices = m.vertices;
+    const cc = _centroidCoord(feature);
+    if (cc) { out.centroid_lon = +cc[0].toFixed(8); out.centroid_lat = +cc[1].toFixed(8); }
+  }
+  if (m.parts > 1)       out.parts = m.parts;
+  if (m.rings > m.parts) out.rings = m.rings;
+  return out;
+}
+
+/* The readable block for <description>. tokml entity-escapes what it is given, and both the
+   KML spec and Google Earth treat an escaped description as HTML, so these <br/> come out
+   as line breaks in the balloon instead of as visible tags. */
+function geomDescriptionHtml(feature) {
+  const rows = geomInfoRows(feature);
+  return rows.length ? GEOM_DESC_MARK + rows.map(([k,v]) => k + ': ' + v).join('<br/>') : '';
+}
+
+/* Drop a previously generated block, leaving only what the user typed. */
+function stripGeomDescription(desc) {
+  const s = String(desc == null ? '' : desc);
+  const i = s.indexOf(GEOM_DESC_MARK);
+  return (i < 0 ? s : s.slice(0, i)).replace(/(?:\s|<br\s*\/?>)+$/i, '');
+}
+
+/* Stamp the readout onto a feature on its way out: raw values as properties (ExtendedData
+   in KML, plain fields in GeoJSON) and the readable block appended to the description.
+   Everything is recomputed here, never inherited from a previous pass. */
+function stampGeomInfo(feature, opts) {
+  if (!feature || !feature.geometry) return feature;
+  opts = opts || {};
+  const props = feature.properties = feature.properties || {};
+  const radius = props.radius_m;                       // survives the strip below
+  GEOM_PROP_KEYS.forEach(k => { delete props[k]; });
+  if (radius !== undefined) props.radius_m = radius;
+  Object.assign(props, geomProps(feature));
+  if (opts.description !== false) {
+    const own   = stripGeomDescription(props.description);
+    const block = geomDescriptionHtml(feature);
+    if (block)    props.description = own ? own + '<br/><br/>' + block : block;
+    else if (own) props.description = own;
+  }
+  return feature;
+}
+
+/* The same geometry section in every popup \u2014 drawn shape, imported KML/GeoJSON/GPX, WFS
+   feature \u2014 so a measurement is presented one way across the whole app. Every value here is
+   generated from numbers we computed, so the innerHTML carries nothing from the file. */
+function geomInfoSection(feature) {
+  const rows = geomInfoRows(feature);
+  if (!rows.length) return null;
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'margin:6px 0;padding-top:6px;border-top:1px solid var(--border)';
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px';
+  hdr.textContent = GEOM_LABELS.section;
+  wrap.appendChild(hdr);
+  const tbl = document.createElement('table');
+  tbl.style.cssText = 'width:100%;font-size:11px;font-family:monospace';
+  tbl.innerHTML = rows.map(([k,v]) =>
+    `<tr><td style="opacity:.65;padding-right:8px;white-space:nowrap">${k}</td><td>${v}</td></tr>`).join('');
+  wrap.appendChild(tbl);
+  return wrap;
+}
+
+/* Convenience for a Leaflet layer, used by the popups that have no GeoJSON at hand. */
+function geomInfoSectionForLayer(layer) {
+  try { return geomInfoSection(layerToGeoJSON(layer)); } catch(_) { return null; }
+}
+
+function calcArea(layer) {
+  try { return fmtArea(geomMeasure(layerToGeoJSON(layer).geometry).area); }
+  catch(e) { return null; }
 }
 
 function calcLength(layer) {
-  const latlngs = layer.getLatLngs ? layer.getLatLngs() : null;
-  if (!latlngs) return null;
   try {
-    const pts = Array.isArray(latlngs[0]) ? latlngs[0] : latlngs;
-    let total = 0;
-    for (let i=1; i<pts.length; i++) total += pts[i-1].distanceTo(pts[i]);
-    if (total < 1000) return total.toFixed(1) + ' m';
-    return (total/1000).toFixed(3) + ' km';
+    const m = geomMeasure(layerToGeoJSON(layer).geometry);
+    return fmtLength(m.length || m.perimeter);
   } catch(e) { return null; }
 }
 

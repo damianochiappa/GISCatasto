@@ -1386,9 +1386,11 @@ function _selExportKML() {
   const _col = (_tgt && _tgt.layer && _tgt.layer.options &&
     (_tgt.layer.options.color || (_tgt.layer.options.style && _tgt.layer.options.style.color))) || '#ff5533';
   if (typeof _styleFeatureForKml === 'function') features.forEach(f => _styleFeatureForKml(f, _col, 1));
+  // Area and perimeter of every exported parcel, alongside the cadastral attributes.
+  features.forEach(f => stampGeomInfo(f));
   showPromptModal('Nome del file (senza estensione):', 'selection', fname => {
     const base = ((fname || 'selection').trim() || 'selection').replace(/\.kml$/i, '');
-    downloadFile(tokml({ type:'FeatureCollection', features }, { simplestyle: true }),
+    downloadFile(tokml({ type:'FeatureCollection', features }, TOKML_OPTS),
       base + '.kml', 'application/vnd.google-earth.kml+xml');
   }, 'Il file .kml viene salvato nella cartella Download del dispositivo.');
 }
@@ -1908,6 +1910,9 @@ const _WFSLayer = L.Layer.extend({
               tbl.innerHTML = rows;
               popupEl.appendChild(tbl);
             }
+            // Area and perimeter of the parcel: the number the attributes never carry.
+            const geomSec = geomInfoSection(f);
+            if (geomSec) popupEl.appendChild(geomSec);
             const selBtn = document.createElement('button');
             selBtn.style.cssText = 'font-size:11px;padding:3px 10px;cursor:pointer;background:var(--accent);color:#fff;border:none;border-radius:4px;width:100%';
             selBtn.textContent = _selKeys.has(key) ? '✓ Deselect' : '☆ Select';
