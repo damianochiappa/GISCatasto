@@ -47,6 +47,7 @@ GISCatasto includes the following open-source libraries. Their licenses are repr
 ## tokml (tmcw)
 - License: MIT
 - https://github.com/tmcw/tokml
+- Modified: `extendeddata()` skips the properties already emitted as KML elements of their own (see the comment in `app/lib/tokml.js`)
 
 ## toGeoJSON (Mapbox)
 - License: BSD-2-Clause

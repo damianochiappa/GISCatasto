@@ -673,7 +673,7 @@
               <div class="guide-item"><span class="guide-key">Modifica ↖</span><span class="guide-desc">Sposta e rimodella le forme già disegnate: trascina i vertici, doppio tocco per eliminarne uno, trascina un punto intermedio tratteggiato per aggiungerne uno. Salva conferma, Annulla scarta</span></div>
               <div class="guide-item"><span class="guide-key">Tocca una forma</span><span class="guide-desc">Dalle un nome, aggiungi una descrizione, cambia icona, colore e opacità, esportala in KML o eliminala. Nome e descrizione si salvano mentre scrivi, non serve confermare.</span></div>
               <div class="guide-item"><span class="guide-key">Salvataggio automatico</span><span class="guide-desc">I disegni — nome, descrizione, colore e icona compresi — si salvano da soli a ogni modifica e tornano alla riapertura</span></div>
-              <div class="guide-item"><span class="guide-key">Esporta tutto</span><span class="guide-desc">Esporta tutti i disegni in KML o GeoJSON (con colore, icona, tipo e opacità)</span></div>
+              <div class="guide-item"><span class="guide-key">Esporta tutto</span><span class="guide-desc">Esporta tutti i disegni in KML o GeoJSON (con colore, icona, tipo, opacità e le misure)</span></div>
               <div class="guide-item"><span class="guide-key">Cancella tutto</span><span class="guide-desc">Chiede conferma prima di eliminare tutti i disegni</span></div>
               <div class="guide-item"><span class="guide-key">Dissolvi KML</span><span class="guide-desc">Nella sezione Strumenti KML del pannello Disegno, tocca “Dissolvi geometrie KML” per aprire l’elenco dei layer. Spunta uno o più KML caricati, poi tocca “Dissolvi i selezionati”: tutti i poligoni dei layer scelti vengono fusi in una sola geometria e i confini interni spariscono. Buchi e aree staccate restano tali. Scrivi nome e descrizione e salva come nuovo layer KML. Serve turf.min.js nella cartella dell’app.</span></div>
             </div>
@@ -1017,7 +1017,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.2.7</span></div>
+      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.2.9</span></div>
       <div class="about-row"><span class="lbl">Autore</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">Licenza</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — software libero</a></span></div>
       <div class="about-row"><span class="lbl">Tecnologia</span><span class="val">Leaflet · Cordova · Android</span></div>
@@ -1519,5 +1519,22 @@ window.addEventListener('load', function nvCacheFullInit() {
 <script src="js/offline.js"></script>
 <script src="js/cadaster-wizard.js"></script>
 
+
+<!-- Suggested swatches for every <input type="color"> in the app. The native picker offers
+     a fixed grid of web colours that cannot contain #4f8ef7, so once a user moved a layer off
+     the default there was no way back to it short of knowing the hex. These are the colours
+     the app itself already uses, default first. A platform that ignores `list` simply shows
+     the picker it shows today: the fallback is the current behaviour, not a worse one. -->
+<datalist id="app-colors">
+  <option value="#4f8ef7">Blu predefinito</option>
+  <option value="#1565c0">Blu scuro</option>
+  <option value="#4caf7d">Verde</option>
+  <option value="#2e7d52">Verde scuro</option>
+  <option value="#ffd600">Giallo</option>
+  <option value="#f5a623">Ambra</option>
+  <option value="#f0a830">Arancio</option>
+  <option value="#ff5533">Vermiglio</option>
+  <option value="#ef5350">Rosso</option>
+</datalist>
 </body>
 </html>

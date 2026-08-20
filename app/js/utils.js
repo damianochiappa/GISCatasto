@@ -424,7 +424,69 @@ function fmtLength(m) {
   return (m/1000).toFixed(3) + ' km';
 }
 
-const _coordLatLng = c => L.latLng(c[1], c[0]);
+/* ===== WGS 84 =====
+   Two different spheres, for two different jobs, neither of them the equatorial radius.
+   The AUTHALIC radius is the sphere with the same surface area as the ellipsoid: it is the
+   only radius on which a spherical area formula is not systematically wrong. Leaflet.draw's
+   geodesicArea used the equatorial radius, which inflated every area the app reported by
+   (6378137/6371007.181)^2 - 1 = 0.224% \u2014 4.5 m\u00b2 on a 2000 m\u00b2 parcel, and unmissable the
+   moment an exported file is opened next to Google Earth's own reading. */
+const WGS84_A = 6378137.0;
+const WGS84_F = 1 / 298.257223563;
+const WGS84_B = WGS84_A * (1 - WGS84_F);
+const WGS84_AUTHALIC_R = 6371007.181;
+const SPHERE_R = 6371000.0;            // Leaflet's own radius, kept for the fallback below
+
+/* Vincenty's inverse formula on the ellipsoid. Leaflet's distanceTo is a haversine on a
+   6371 km sphere, and its error is NOT a constant that a different radius could absorb:
+   measured against the ellipsoid at 45\u00b0 it runs 0.060% long north-south and 0.279% short
+   east-west, a 0.34-point swing with azimuth. Only the ellipsoid agrees with what an earth
+   browser reports back to the user.
+   Near-antipodal pairs do not converge; there the spherical value is returned instead,
+   which cannot arise from a shape someone drew and beats returning NaN. */
+function geodesicDistance(lat1, lon1, lat2, lon2) {
+  const rad = Math.PI / 180;
+  const dLon = (lon2 - lon1) * rad;               // not named L: that is Leaflet
+  const U1 = Math.atan((1 - WGS84_F) * Math.tan(lat1 * rad));
+  const U2 = Math.atan((1 - WGS84_F) * Math.tan(lat2 * rad));
+  const sU1 = Math.sin(U1), cU1 = Math.cos(U1);
+  const sU2 = Math.sin(U2), cU2 = Math.cos(U2);
+  let lam = dLon, lamPrev, iter = 0;
+  let sinSig, cosSig, sig, cos2Alpha, cos2SigM;
+  do {
+    const sL = Math.sin(lam), cL = Math.cos(lam);
+    const t1 = cU2 * sL, t2 = cU1 * sU2 - sU1 * cU2 * cL;
+    sinSig = Math.sqrt(t1*t1 + t2*t2);
+    if (sinSig === 0) return 0;                   // coincident points
+    cosSig = sU1 * sU2 + cU1 * cU2 * cL;
+    sig = Math.atan2(sinSig, cosSig);
+    const sinAlpha = cU1 * cU2 * sL / sinSig;
+    cos2Alpha = 1 - sinAlpha * sinAlpha;
+    cos2SigM = cos2Alpha !== 0 ? cosSig - 2 * sU1 * sU2 / cos2Alpha : 0;  // 0 on the equator
+    const C = WGS84_F / 16 * cos2Alpha * (4 + WGS84_F * (4 - 3 * cos2Alpha));
+    lamPrev = lam;
+    lam = dLon + (1 - C) * WGS84_F * sinAlpha *
+          (sig + C * sinSig * (cos2SigM + C * cosSig * (-1 + 2 * cos2SigM * cos2SigM)));
+  } while (Math.abs(lam - lamPrev) > 1e-12 && ++iter < 100);
+  if (iter >= 100) return _haversineDistance(lat1, lon1, lat2, lon2);
+  const uSq = cos2Alpha * (WGS84_A * WGS84_A - WGS84_B * WGS84_B) / (WGS84_B * WGS84_B);
+  const A = 1 + uSq/16384 * (4096 + uSq * (-768 + uSq * (320 - 175 * uSq)));
+  const B = uSq/1024 * (256 + uSq * (-128 + uSq * (74 - 47 * uSq)));
+  const dSig = B * sinSig * (cos2SigM + B/4 * (cosSig * (-1 + 2 * cos2SigM * cos2SigM) -
+               B/6 * cos2SigM * (-3 + 4 * sinSig * sinSig) * (-3 + 4 * cos2SigM * cos2SigM)));
+  return WGS84_B * A * (sig - dSig);
+}
+
+function _haversineDistance(lat1, lon1, lat2, lon2) {
+  const rad = Math.PI / 180;
+  const sdLat = Math.sin((lat2 - lat1) * rad / 2);
+  const sdLon = Math.sin((lon2 - lon1) * rad / 2);
+  const x = sdLat*sdLat + Math.cos(lat1*rad) * Math.cos(lat2*rad) * sdLon*sdLon;
+  return SPHERE_R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+/* Convenience for the callers that hold Leaflet objects rather than raw coordinates. */
+function geodesicDistanceLL(a, b) { return geodesicDistance(a.lat, a.lng, b.lat, b.lng); }
 
 /* Geodesic length of a coordinate array. GeoJSON rings arrive closed (last repeats first),
    so a polygon perimeter needs no special case here \u2014 which is precisely what the old
@@ -432,12 +494,32 @@ const _coordLatLng = c => L.latLng(c[1], c[0]);
 function _coordsLength(coords) {
   let total = 0;
   for (let i = 1; i < coords.length; i++)
-    total += _coordLatLng(coords[i-1]).distanceTo(_coordLatLng(coords[i]));
+    total += geodesicDistance(coords[i-1][1], coords[i-1][0], coords[i][1], coords[i][0]);
   return total;
 }
+
+/* Spherical excess on the authalic radius. Same formula Leaflet.draw ships, on the radius
+   that makes it an equal-area one. Takes {lat,lng} so it can stand in for the original. */
+function geodesicAreaLatLngs(latlngs) {
+  const n = latlngs.length;
+  if (n < 3) return 0;
+  const d2r = Math.PI / 180;
+  let area = 0;
+  for (let i = 0; i < n; i++) {
+    const p1 = latlngs[i], p2 = latlngs[(i + 1) % n];
+    area += ((p2.lng - p1.lng) * d2r) * (2 + Math.sin(p1.lat * d2r) + Math.sin(p2.lat * d2r));
+  }
+  return Math.abs(area * WGS84_AUTHALIC_R * WGS84_AUTHALIC_R / 2);
+}
+
+/* Leaflet.draw's live "area" tooltip while a polygon is being drawn calls geodesicArea
+   directly. Left alone it would quote the old, inflated figure right up to the moment the
+   popup opens with the corrected one. Overridden here rather than edited in the vendored
+   file so the change is visible in our own source and a library refresh cannot revert it. */
+if (typeof L !== 'undefined' && L.GeometryUtil) L.GeometryUtil.geodesicArea = geodesicAreaLatLngs;
+
 function _ringArea(ring) {
-  if (typeof L.GeometryUtil === 'undefined') return 0;
-  return L.GeometryUtil.geodesicArea(ring.map(_coordLatLng));
+  return geodesicAreaLatLngs(ring.map(c => ({ lat: c[1], lng: c[0] })));
 }
 
 /* Raw geodesic measures for a GeoJSON geometry, in metres. Multi* parts are summed and a
@@ -586,14 +668,24 @@ function geomProps(feature) {
    as line breaks in the balloon instead of as visible tags. */
 function geomDescriptionHtml(feature) {
   const rows = geomInfoRows(feature);
-  return rows.length ? GEOM_DESC_MARK + rows.map(([k,v]) => k + ': ' + v).join('<br/>') : '';
+  if (!rows.length) return '';
+  /* One <p> per field, not <br/>. Google Earth on Android does not render the description in
+     a web view: it converts the HTML it recognises into native elements and discards the
+     rest. Verified on a six-variant probe — escaped <br/>, CDATA <br/> and plain newlines all
+     arrive as one run-on line, a <table> becomes a collapsed "TABLE SECTION", and only
+     block-level <p> comes out as separate lines. Escaping is irrelevant to that choice, so
+     tokml's default encoding is left alone. */
+  return GEOM_DESC_MARK + rows.map(([k,v]) => '<p>' + k + ': ' + v + '</p>').join('');
 }
 
 /* Drop a previously generated block, leaving only what the user typed. */
 function stripGeomDescription(desc) {
   const s = String(desc == null ? '' : desc);
   const i = s.indexOf(GEOM_DESC_MARK);
-  return (i < 0 ? s : s.slice(0, i)).replace(/(?:\s|<br\s*\/?>)+$/i, '');
+  const own = (i < 0 ? s : s.slice(0, i)).replace(/(?:\s|<br\s*\/?>)+$/i, '');
+  // Undo the <p> wrapper stampGeomInfo adds, or a re-export would nest one inside the other.
+  const m = own.match(/^<p>([\s\S]*)<\/p>$/i);
+  return m ? m[1] : own;
 }
 
 /* Stamp the readout onto a feature on its way out: raw values as properties (ExtendedData
@@ -610,7 +702,7 @@ function stampGeomInfo(feature, opts) {
   if (opts.description !== false) {
     const own   = stripGeomDescription(props.description);
     const block = geomDescriptionHtml(feature);
-    if (block)    props.description = own ? own + '<br/><br/>' + block : block;
+    if (block)    props.description = own ? '<p>' + own + '</p>' + block : block;
     else if (own) props.description = own;
   }
   return feature;

@@ -36,7 +36,7 @@ Questo repository contiene il codice sorgente della versione pubblicata, come ri
 - **Uso senza connessione** — delimiti un'area disegnando un rettangolo sulla mappa (o con un KML
   che hai già) e scarichi i tile di quella zona prima di partire.
 - **Posizione e misure** — coordinate in DD, DMS, UTM e MGRS, bussola, tracce GPS, misura di
-  distanze e aree, conversione fra sistemi di riferimento.
+  distanze e aree sull’ellissoide WGS 84, conversione fra sistemi di riferimento.
 - **Navigazione** — percorso verso una destinazione in auto, a piedi o in bicicletta.
 
 ## Cosa non fa

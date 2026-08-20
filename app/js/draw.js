@@ -108,6 +108,7 @@ function _openDrawPopup(layer, type) {
     const lbl = document.createElement('label'); lbl.textContent = 'Colore:';
     const colorInput = document.createElement('input');
     colorInput.type = 'color'; colorInput.value = layer._geoColor || '#4f8ef7';
+    colorInput.setAttribute('list', 'app-colors');   // see the datalist in geoapp.html
     colorInput.addEventListener('input', () => {
       layer._geoColor = colorInput.value;
       const o = layer._geoOpacity !== undefined ? layer._geoOpacity : 1;
@@ -480,7 +481,11 @@ function updateTrack(ll, alt, ts) {
 function _trkAdd(p) {
   if (trackPoints.length > 0) {
     const prev = trackPoints[trackPoints.length - 1];
-    trackDistance += map.distance([prev.lat, prev.lng], [p.lat, p.lng]);
+    /* Geodesic, not map.distance: the exported KML and GPX measure the same track through
+       geomMeasure, and a panel disagreeing with the file it just wrote is the defect 1.2.6
+       set out to close. The GPS spike filter below stays on map.distance — it compares
+       against thresholds, where 0.2% buys nothing and Vincenty would sit in the per-fix path. */
+    trackDistance += geodesicDistance(prev.lat, prev.lng, p.lat, p.lng);
 
     const v = _trkSpeed(prev, p);
     if (v != null) {
@@ -732,7 +737,8 @@ function _showElevProfile() {
   const data = pts.map((p, i) => {
     if (i > 0) {
       const prev = pts[i - 1];
-      dist += map.distance([prev.lat, prev.lng], [p.lat, p.lng]);
+      // Same measure as the track panel and the exported files: one distance, one number.
+      dist += geodesicDistance(prev.lat, prev.lng, p.lat, p.lng);
     }
     return { d: dist, alt: p.alt };
   });

@@ -174,9 +174,24 @@ function linearring(_) {
     return _.map(function(cds) { return cds.join(','); }).join(' ');
 }
 
+// GISCATASTO PATCH — see extendeddata() below.
+var SKIP_IN_EXTENDED_DATA = [
+    'name', 'description', 'timestamp',
+    'stroke', 'stroke-opacity', 'stroke-width',
+    'fill', 'fill-opacity',
+    'marker-color', 'marker-size', 'marker-symbol'
+];
+
 // ## Data
 function extendeddata(_) {
-    return tag('ExtendedData', pairs(_).map(data).join(''));
+    // GISCATASTO PATCH — skip the properties already emitted as KML elements of their own.
+    // Upstream dumps every property in here, so <name> and <description> arrived twice and
+    // the description row exposed its raw markup ("…<br/><br/><!--geom-->Type: Polygon…")
+    // in the earth browser's data table. The simplestyle keys are consumed by <Style> and
+    // are noise to a reader. An empty table is dropped rather than emitted hollow.
+    var rows = pairs(_).filter(function (kv) { return SKIP_IN_EXTENDED_DATA.indexOf(kv[0]) === -1; });
+    if (!rows.length) return '';
+    return tag('ExtendedData', rows.map(data).join(''));
 }
 
 function data(_) {

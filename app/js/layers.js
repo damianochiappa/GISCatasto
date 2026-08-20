@@ -365,7 +365,7 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
     <span class="layer-drag" title="Trascina per riordinare">\u22EE</span>
     <input type="checkbox" ${initVisible ? 'checked' : ''} title="Mostra/nascondi">
     <span class="layer-name" title="${name} (doppio tocco per rinominare)">${name}</span>
-    ${isRaster ? '' : `<input type="color" class="layer-color" value="${initColor}" title="Colore del layer">`}
+    ${isRaster ? '' : `<input type="color" class="layer-color" value="${initColor}" title="Colore del layer" list="app-colors">`}
     ${isRaster ? '' : `<button class="layer-hollow${initHollow ? ' active' : ''}" title="Vuoto (bucato) — senza riempimento">\u2205</button>`}
     ${isRaster ? '' : '<button class="layer-zoom" title="Zoom sul layer">\u29C6</button>'}
     ${opts.isWfs ? '<button class="layer-find" title="Trova le geometrie filtrate (ovunque, non solo nella vista)">\u2316</button>' : ''}

@@ -54,6 +54,7 @@ mgrs.js
 tokml
   License: MIT
   https://github.com/tmcw/tokml
+  Modified: extendeddata() skips properties already emitted as KML elements
 
 turf.js
   License: MIT
