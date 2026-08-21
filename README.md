@@ -48,6 +48,10 @@ Questo repository contiene il codice sorgente della versione pubblicata, come ri
   dell'ordine di alcuni metri, che nessuna app può correggere. Serve a riconoscere una particella,
   non a definire un confine di proprietà: per quello servono un tecnico qualificato e un rilievo
   strumentale.
+- **L'area che leggi non è la superficie di visura.** Il numero nel popup è calcolato sulla
+  geometria pubblicata dall'Agenzia delle Entrate — per questo si chiama area geometrica: dice
+  quanto è estesa la forma sulla mappa, non quanto risulta al catasto. La superficie ufficiale è
+  quella della visura, e le due possono differire.
 - **La consultazione del catasto richiede la connessione.** I dati arrivano dai servizi
   dell'Agenzia al momento della richiesta e non ne viene conservata una copia. Senza rete restano
   le mappe scaricate e i livelli salvati.

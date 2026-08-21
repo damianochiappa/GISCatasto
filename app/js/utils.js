@@ -392,7 +392,9 @@ const STYLE_PROP_KEYS = ['stroke', 'stroke-opacity', 'stroke-width', 'fill', 'fi
                          'marker-color', 'marker-size', 'marker-symbol'];
 
 const GEOM_LABELS = {
-  section: 'Geometria', type: 'Tipo', area: 'Area', perimeter: 'Perimetro', length: 'Lunghezza',
+  /* "Area geometrica", not "Area": the number is measured off the published geometry, and a
+     reader comparing it with the surface on a visura has to see that in the label itself. */
+  section: 'Geometria', type: 'Tipo', area: 'Area geometrica', perimeter: 'Perimetro', length: 'Lunghezza',
   radius: 'Raggio', vertices: 'Vertici', parts: 'Parti', rings: 'Anelli', centroid: 'Centroide',
   lat: 'Latitudine', lon: 'Longitudine', dms: 'Lat/Lon', mgrs: 'MGRS', utm: 'UTM', crs: 'CRS'
 };
@@ -595,23 +597,30 @@ function layerToGeoJSON(layer) {
   return layer.toGeoJSON();
 }
 
-/* Labelled rows for a popup, and for the <description> of an exported file. */
-function geomInfoRows(feature) {
+/* Labelled rows for a popup, and for the <description> of an exported file. Two readers, two
+   lengths: `compact` keeps only what someone acts on — the measurements, or the coordinates and
+   the CRS that gives them meaning — while the export keeps the full record, the file being the
+   archive a popup on a phone is not. */
+function geomInfoRows(feature, opts) {
   const geom = feature && feature.geometry;
   if (!geom || !geom.type) return [];
+  const compact = !!(opts && opts.compact);
   const m = geomMeasure(geom);
   const props = feature.properties || {};
-  const rows = [[GEOM_LABELS.type, GEOM_TYPE_LABELS[m.type] || m.type]];
-  if (/Point$/.test(m.type)) {
+  const isPoint = /Point$/.test(m.type);
+  const rows = compact ? [] : [[GEOM_LABELS.type, GEOM_TYPE_LABELS[m.type] || m.type]];
+  if (isPoint) {
     const c = _firstCoord(geom);
     if (c) {
       rows.push([GEOM_LABELS.lat, c[1].toFixed(6)]);
       rows.push([GEOM_LABELS.lon, c[0].toFixed(6)]);
-      rows.push([GEOM_LABELS.dms, latToDMS(c[1]) + ' ' + lonToDMS(c[0])]);
-      const mg = mgrsForward(c[0], c[1]);
-      if (mg && mg !== '--') rows.push([GEOM_LABELS.mgrs, mg]);
-      const u = UTM.fromLatLng({ lat: c[1], lng: c[0] });
-      if (u) rows.push([GEOM_LABELS.utm, u.zone + ' ' + u.x + ' ' + u.y]);
+      if (!compact) {
+        rows.push([GEOM_LABELS.dms, latToDMS(c[1]) + ' ' + lonToDMS(c[0])]);
+        const mg = mgrsForward(c[0], c[1]);
+        if (mg && mg !== '--') rows.push([GEOM_LABELS.mgrs, mg]);
+        const u = UTM.fromLatLng({ lat: c[1], lng: c[0] });
+        if (u) rows.push([GEOM_LABELS.utm, u.zone + ' ' + u.x + ' ' + u.y]);
+      }
     }
   } else {
     const a = fmtArea(m.area), p = fmtLength(m.perimeter), l = fmtLength(m.length);
@@ -620,13 +629,19 @@ function geomInfoRows(feature) {
     if (l) rows.push([GEOM_LABELS.length, l]);
     const r = parseFloat(props.radius_m);
     if (isFinite(r) && r > 0) rows.push([GEOM_LABELS.radius, fmtLength(r)]);
-    if (m.vertices) rows.push([GEOM_LABELS.vertices, String(m.vertices)]);
-    const cc = _centroidCoord(feature);
-    if (cc) rows.push([GEOM_LABELS.centroid, cc[1].toFixed(6) + ', ' + cc[0].toFixed(6)]);
+    if (!compact) {
+      if (m.vertices) rows.push([GEOM_LABELS.vertices, String(m.vertices)]);
+      const cc = _centroidCoord(feature);
+      if (cc) rows.push([GEOM_LABELS.centroid, cc[1].toFixed(6) + ', ' + cc[0].toFixed(6)]);
+    }
   }
-  if (m.parts > 1)        rows.push([GEOM_LABELS.parts, String(m.parts)]);
-  if (m.rings > m.parts)  rows.push([GEOM_LABELS.rings, String(m.rings)]);
-  rows.push([GEOM_LABELS.crs, GEOM_CRS_LABEL]);
+  if (!compact) {
+    if (m.parts > 1)        rows.push([GEOM_LABELS.parts, String(m.parts)]);
+    if (m.rings > m.parts)  rows.push([GEOM_LABELS.rings, String(m.rings)]);
+  }
+  /* A coordinate without its CRS is just a pair of numbers, so the compact popup keeps that row
+     on points; next to a length in metres it read as boilerplate, and it goes. */
+  if (!compact || (isPoint && rows.length)) rows.push([GEOM_LABELS.crs, GEOM_CRS_LABEL]);
   return rows;
 }
 
@@ -712,7 +727,12 @@ function stampGeomInfo(feature, opts) {
    feature \u2014 so a measurement is presented one way across the whole app. Every value here is
    generated from numbers we computed, so the innerHTML carries nothing from the file. */
 function geomInfoSection(feature) {
-  const rows = geomInfoRows(feature);
+  /* Compact by default. A geometry degenerate enough to leave the compact set empty — a
+     collection holding only points, a one-vertex line, coordinates that are not numbers —
+     falls back to the full rows: _bindFeaturePopup drops a popup with no children, so an
+     empty section here would mean tapping the feature does nothing at all. */
+  let rows = geomInfoRows(feature, { compact: true });
+  if (!rows.length) rows = geomInfoRows(feature);
   if (!rows.length) return null;
   const wrap = document.createElement('div');
   wrap.style.cssText = 'margin:6px 0;padding-top:6px;border-top:1px solid var(--border)';

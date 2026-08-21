@@ -8,6 +8,11 @@
 ===================================================== */
 
 const loadedLayers = {};
+/* The bytes the ⬇ button writes out, by layer id. Kept here rather than in the closure of
+   addLayerToList because a KML can be edited after it was listed: with the closure copy, the
+   export kept handing out the geometry from before the edit for the rest of the session,
+   while the toast said the edit had been saved. _saveKmlEdit updates this entry. */
+const _rawContentById = {};
 let layerCounter = 0;
 
 /* ===== RECURSIVE BOUNDS COLLECTOR (robust KML zoom) ===== */
@@ -329,6 +334,7 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
 
   const id = 'layer_' + (++layerCounter);
   loadedLayers[id] = layer;
+  if (hasRaw) _rawContentById[id] = rawContent;
 
   // Every entry gets its own stacking pane, so any entry can be ordered against any
   // other. Rasters must be routed BEFORE addTo: both L.TileLayer and _WMSImageLayer
@@ -422,7 +428,8 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
     showPromptModal('Nome del file (senza estensione):', baseName, fname => {
       const stripRe = new RegExp('\\' + ext + '$', 'i');
       const stem = ((fname || baseName).trim() || baseName).replace(stripRe, '');
-      downloadFile(rawContent, stem + ext, rawMime);
+      // Current bytes, not the ones captured when the layer was listed — see _rawContentById.
+      downloadFile(_rawContentById[id] !== undefined ? _rawContentById[id] : rawContent, stem + ext, rawMime);
     });
   });
   /* Removal is not the same gesture as hiding, and the ✕ sits next to the visibility
@@ -435,6 +442,7 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
         const l = loadedLayers[id];
         map.removeLayer(l);
         delete loadedLayers[id];
+        delete _rawContentById[id];
         // Drop this overlay's dedicated stacking pane so panes don't accumulate.
         if (item.dataset.ovPane) { const pe = map.getPane(item.dataset.ovPane); if (pe && pe.remove) pe.remove(); }
         item.remove();
@@ -1251,6 +1259,9 @@ function _saveKmlEdit() {
     enhanceKMLLayer(newLayer, _extractPlacemarkProps(kmlDoc), kmlDoc);
     newLayer.addTo(map);
     loadedLayers[layerId] = newLayer;
+    /* The ⬇ button reads from here, so the edited geometry has to land before the user can
+       press it — otherwise the export writes the shape as it was before the edit. */
+    _rawContentById[layerId] = newKmlContent;
     const _editItem = document.querySelector(`[data-id="${layerId}"]`);
     if (_editItem) {
       const _cp = _editItem.querySelector('.layer-color');

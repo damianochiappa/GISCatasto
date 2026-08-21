@@ -66,8 +66,9 @@ function _openDrawPopup(layer, type) {
   const popup = document.createElement('div');
   popup.style.minWidth = '210px';
 
-  /* Full readout rather than the old Area/Length pair: a marker used to show nothing at all,
-     and a polygon's "Length" was its perimeter under the wrong name. */
+  /* The compact readout, not the old Area/Length pair: a marker used to show nothing at all,
+     and a polygon's "Length" was its perimeter under the wrong name. What the popup leaves
+     out — vertices, centroid, the other coordinate formats — is in the exported file. */
   const infoSec = geomInfoSectionForLayer(layer);
   if (infoSec) { infoSec.style.marginTop = '0'; infoSec.style.borderTop = 'none'; infoSec.style.paddingTop = '0'; popup.appendChild(infoSec); }
 
@@ -207,15 +208,32 @@ map.on(L.Draw.Event.CREATED, e => {
   _saveDraws();
   toastMsg('Forma aggiunta e salvata', 'success');
 });
-map.on(L.Draw.Event.EDITED, e => { updateDrawStats(); _saveDraws(); toastMsg('Forme modificate e salvate', 'success'); });
+map.on(L.Draw.Event.EDITED, e => {
+  // The event carries what was reshaped, so the readout can follow the new geometry instead
+  // of keeping the figures the shape had before the edit.
+  const _edited = (e.layers && e.layers.getLayers) ? e.layers.getLayers()[0] : null;
+  updateDrawStats(_edited || undefined);
+  _saveDraws();
+  toastMsg('Forme modificate e salvate', 'success');
+});
 
+/* The shape the "Last area" / "Last distance" figures describe. Without it the readout
+   outlived its subject: deleting that shape, or clearing them all, left its measurements on
+   screen, and reshaping it left the numbers it had before the edit. */
+let _statLayer = null;
 function updateDrawStats(layer) {
   const count = drawnItems.getLayers().length;
   document.getElementById('stat-count').textContent = count;
   if (layer) {
+    _statLayer = layer;
     const a = calcArea(layer), l = calcLength(layer);
     document.getElementById('stat-area').textContent = a || '--';
     document.getElementById('stat-dist').textContent = l || '--';
+  } else if (_statLayer && !drawnItems.hasLayer(_statLayer)) {
+    // Its shape is gone from the map; the figures would describe nothing.
+    _statLayer = null;
+    document.getElementById('stat-area').textContent = '--';
+    document.getElementById('stat-dist').textContent = '--';
   }
   _refreshDrawButtons();
 }

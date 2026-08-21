@@ -737,6 +737,7 @@
               <div class="guide-item"><span class="guide-key">Reset</span><span class="guide-desc">Azzera il risultato della ricerca: deseleziona le particelle che aveva evidenziato e toglie il filtro catastale attivo, riportando il layer Catasto Particelle al suo comportamento normale (nessun filtro, solo la vista corrente). Dopo “Vai” le particelle intorno restano mostrate, quindi è questo il pulsante con cui lasci la selezione quando hai finito.</span></div>
               <div class="guide-item"><span class="guide-key">Filtro già attivo</span><span class="guide-desc">Se sul layer Catasto Particelle c’è già un filtro WFS impostato a mano (col pulsante &#9661; nell’elenco dei layer), la ricerca guidata lo sostituisce &mdash; un avviso te lo segnala quando succede.</span></div>
               <div class="guide-item"><span class="guide-key">Punti fiduciali</span><span class="guide-desc">I punti fiduciali non sono precaricati. Dove la Regione li pubblica via WFS &mdash; il Piemonte lo fa &mdash; aggiungi il servizio da “Aggiungi mappa web” e i punti diventano un layer interrogabile come gli altri. Altrove, importa un KML ricavato dal TAF, la tabella dei punti fiduciali pubblicata dall’Agenzia delle Entrate. In entrambi i casi il layer viene salvato e ripristinato al lancio successivo. Questi punti non hanno valore legale: un atto di aggiornamento catastale richiede le monografie ufficiali dell’AdE.</span></div>
+              <div class="guide-item"><span class="guide-key">Area e visura</span><span class="guide-desc">L’“Area geometrica” nel popup di una particella è calcolata sulla geometria pubblicata dall’Agenzia delle Entrate: è la misura della forma sulla mappa, non la superficie catastale. Quella ufficiale è la superficie di visura, e le due possono differire. Per un atto vale la visura.</span></div>
             </div>
 
           </div>
@@ -1017,7 +1018,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.2.9</span></div>
+      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.3.0</span></div>
       <div class="about-row"><span class="lbl">Autore</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">Licenza</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — software libero</a></span></div>
       <div class="about-row"><span class="lbl">Tecnologia</span><span class="val">Leaflet · Cordova · Android</span></div>

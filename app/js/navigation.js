@@ -108,7 +108,10 @@
     const routeFeature = { type: 'Feature', properties: {},
       geometry: { type: 'LineString', coordinates: navRouteCoords.map(c => [c[1], c[0]]) } };
     const ATTRIB = 'Route © OpenStreetMap contributors (ODbL); routing by OSRM / FOSSGIS';
-    const desc = _xmlEsc(ATTRIB + '<br/><br/>' + geomDescriptionHtml(routeFeature));
+    /* <p>, not <br/>: Google Earth on Android converts the HTML it recognises into native
+       elements and drops the inline markup, so a <br/> arrives as no line break at all and the
+       attribution ran into the first measurement. Same rule geomDescriptionHtml follows. */
+    const desc = _xmlEsc('<p>' + ATTRIB + '</p>' + geomDescriptionHtml(routeFeature));
     const geomData = Object.entries(geomProps(routeFeature))
       .map(([k, v]) => `\n        <Data name="${_xmlEsc(k)}"><value>${_xmlEsc(String(v))}</value></Data>`)
       .join('');
@@ -183,7 +186,8 @@
       // Navigation drives track-up rotation regardless of the manual compass lock —
       // tell the compass so it reflects the active-rotation state.
       if (typeof window._compassSetAuto === 'function') window._compassSetAuto(true);
-      // Center on GPS, alza a zoom 17 se inferiore, altrimenti rispetta scelta utente
+      // Centre on the GPS fix, raising the zoom to 17 only if it is lower — a closer view the
+      // user chose for themselves is left alone.
       const _z = Math.max(map.getZoom(), 17);
       map.setView(ll, _z, { animate: true });
     } catch (e) {

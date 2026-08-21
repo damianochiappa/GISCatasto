@@ -52,9 +52,13 @@
       if (dlat < _MOVE_THRESHOLD && dlon < _MOVE_THRESHOLD) return;
     }
 
+    /* The reference moves now, not when the query eventually runs. While it only moved on a
+       completed query, every fix past the threshold re-armed the debounce — and at roughly one
+       fix per second the two-second timer never got to fire, so the elevation in the status bar
+       froze for as long as the user kept walking and only caught up once they stopped. */
+    _lastLat = lat; _lastLon = lon;
     clearTimeout(_debounceTimer);
     _debounceTimer = setTimeout(async () => {
-      _lastLat = lat; _lastLon = lon;
       const elevItem = document.getElementById('sb-elev-item');
       const elevEl   = document.getElementById('sb-elev');
       if (elevItem && elevEl) {

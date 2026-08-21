@@ -320,6 +320,10 @@ document.addEventListener('visibilitychange', () => {
 
 /* ===== GPS CONTROL ===== */
 let gpsMarker = null, gpsCircle = null, gpsActive = false, gpsFirstFix = false, gpsWatchId = null;
+/* Which of the three marker shapes is currently on the map ('plane' | 'arrow' | 'dot'). They
+   are different Leaflet classes, so only a change of KIND may rebuild the marker — see
+   gpsUpdate, where rebuilding it on every fix used to kill the popup a second after it opened. */
+let _gpsMarkerKind = null;
 // Forgiving geolocation options: accept a fix up to 10s old for an instant first reading, and
 // allow a long window before a (non-fatal) timeout — a cold high-accuracy fix on some phones
 // (indoors, aggressive battery managers like Motorola) can take well over 20s.
@@ -404,9 +408,11 @@ function gpsUpdate(pos) {
   const alt = pos.coords.altitude;
   const ts  = pos.timestamp || Date.now();
 
-  if (gpsCircle) map.removeLayer(gpsCircle);
-  if (gpsMarker) map.removeLayer(gpsMarker);
-  gpsCircle = L.circle(ll, { radius: acc, color: '#4f8ef7', fillColor: '#4f8ef7', fillOpacity: 0.12, weight: 1 }).addTo(map);
+  /* Moved, not rebuilt. Removing and re-adding the accuracy circle on every fix made it
+     flicker, and doing the same to the marker destroyed whatever popup the user had just
+     opened — the reason the GPS balloon only ever lasted about a second. */
+  if (gpsCircle) { gpsCircle.setLatLng(ll); gpsCircle.setRadius(acc); }
+  else gpsCircle = L.circle(ll, { radius: acc, color: '#4f8ef7', fillColor: '#4f8ef7', fillOpacity: 0.12, weight: 1 }).addTo(map);
 
   const dd   = `${ll.lat.toFixed(6)}, ${ll.lng.toFixed(6)}`;
   const mgrs = mgrsForward(ll.lng, ll.lat);
@@ -464,19 +470,30 @@ function gpsUpdate(pos) {
   // keep the rotated arrow. On foot the map is already track-up, so the cone marks
   // position and the forward sector instead of duplicating a heading arrow.
   const _navProfMarker = typeof window.navGetProfile === 'function' ? window.navGetProfile() : 'driving';
-  if (_isFlying) {
-    gpsMarker = L.marker(ll, { icon: _makeAirplaneIcon(pos.coords.heading), zIndexOffset: 1000 })
-      .addTo(map).bindPopup(gpsDiv, { maxWidth: 260 });
-  } else if (!_isFlying && typeof navIsActive === 'function' && navIsActive() && _smoothBearing != null && _navProfMarker !== 'walking') {
-    // Marker icons are screen-fixed (leaflet-rotate rotateWithView:false), while the map
-    // is rotated track-up via setBearing(-_smoothBearing). Add the current map bearing so the
-    // arrow points along travel instead of double-counting the heading.
-    gpsMarker = L.marker(ll, { icon: _makeNavArrowIcon(_smoothBearing + map.getBearing()), zIndexOffset: 1000 })
-      .addTo(map).bindPopup(gpsDiv, { maxWidth: 260 });
+  const _kind = _isFlying ? 'plane'
+              : (typeof navIsActive === 'function' && navIsActive() && _smoothBearing != null && _navProfMarker !== 'walking') ? 'arrow'
+              : 'dot';
+  // Marker icons are screen-fixed (leaflet-rotate rotateWithView:false), while the map
+  // is rotated track-up via setBearing(-_smoothBearing). Add the current map bearing so the
+  // arrow points along travel instead of double-counting the heading.
+  const _icon = () => _kind === 'plane' ? _makeAirplaneIcon(pos.coords.heading)
+                                        : _makeNavArrowIcon(_smoothBearing + map.getBearing());
+  const _popupWasOpen = !!(gpsMarker && gpsMarker.isPopupOpen && gpsMarker.isPopupOpen());
+  if (gpsMarker && _gpsMarkerKind === _kind) {
+    gpsMarker.setLatLng(ll);
+    if (_kind !== 'dot') gpsMarker.setIcon(_icon());
   } else {
-    gpsMarker = L.circleMarker(ll, { radius: 8, color: '#4f8ef7', fillColor: '#fff', fillOpacity: 1, weight: 3 })
-      .addTo(map).bindPopup(gpsDiv, { maxWidth: 260 });
+    if (gpsMarker) map.removeLayer(gpsMarker);
+    gpsMarker = (_kind === 'dot')
+      ? L.circleMarker(ll, { radius: 8, color: '#4f8ef7', fillColor: '#fff', fillOpacity: 1, weight: 3 })
+      : L.marker(ll, { icon: _icon(), zIndexOffset: 1000 });
+    gpsMarker.addTo(map).bindPopup(gpsDiv, { maxWidth: 260 });
+    _gpsMarkerKind = _kind;
   }
+  /* The readout is refreshed only while the balloon is shut. Swapping the content of an open
+     popup would replace the "Copy coordinates" button under the user's finger and re-run the
+     auto-pan on every fix, so what stays on screen is the reading that was tapped for. */
+  if (!_popupWasOpen && gpsMarker.getPopup()) gpsMarker.setPopupContent(gpsDiv);
 
   // Fetch terrain elevation: updates popup label + refreshes _gpsTerrainElev for next fix
   if (typeof fetchElevation === 'function') {
@@ -674,7 +691,7 @@ function toggleGPS(btn) {
     _releaseWakeLock();
     if (_gpsRetryTid) { clearTimeout(_gpsRetryTid); _gpsRetryTid = null; }
     if (gpsWatchId !== null) { navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; }
-    if (gpsMarker) { map.removeLayer(gpsMarker); gpsMarker = null; }
+    if (gpsMarker) { map.removeLayer(gpsMarker); gpsMarker = null; _gpsMarkerKind = null; }
     if (gpsCircle) { map.removeLayer(gpsCircle); gpsCircle = null; }
     const _fp = document.getElementById('flight-panel');
     if (_fp) _fp.classList.add('hidden');

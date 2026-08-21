@@ -78,6 +78,10 @@ Vale la pena dirlo prima dell'installazione, non dopo.
   riconoscere una particella, non a definire un confine di proprietà con valore legale: quello
   resta compito di un tecnico qualificato, sulla documentazione ufficiale e con un rilievo
   strumentale.
+- **L'area che leggi non è la superficie di visura.** Il numero nel popup è calcolato sulla
+  geometria pubblicata dall'Agenzia delle Entrate — per questo si chiama area geometrica: dice
+  quanto è estesa la forma sulla mappa, non quanto risulta al catasto. La superficie ufficiale è
+  quella della visura, e le due possono differire.
 - **La consultazione del catasto richiede la connessione.** Senza rete restano le mappe scaricate e
   i livelli salvati, non l'interrogazione catastale.
 - **La ricerca dei luoghi richiede la connessione**, e non suggerisce durante la digitazione.
