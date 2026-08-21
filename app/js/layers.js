@@ -1252,7 +1252,20 @@ function _saveKmlEdit() {
     return;
   }
 
-  const newKmlContent = tokml({ type: 'FeatureCollection', features });
+  /* Styled and written through TOKML_OPTS, like every other export in the app. Without the
+     styling pass the rebuilt file carried no <Style> at all: the layer kept its colour on
+     screen, because that lives in the legend entry, but the file exported afterwards opened
+     unstyled in an earth browser — an edit to the vertices silently stripped the appearance.
+     The colour applied is the one the layer has now, which is what the user is looking at. */
+  const _row  = document.querySelector(`[data-id="${layerId}"]`);
+  const _rowC = _row && _row.querySelector('.layer-color');
+  const _rowO = _row && _row.querySelector('.layer-opacity');
+  const _kmlColor   = (_rowC && _rowC.value) || '#4f8ef7';
+  const _kmlOpacity = _rowO ? (parseInt(_rowO.value, 10) || 100) / 100 : 1;
+  if (typeof _styleFeatureForKml === 'function') {
+    features.forEach(f => { try { _styleFeatureForKml(f, _kmlColor, _kmlOpacity); } catch(_) {} });
+  }
+  const newKmlContent = tokml({ type: 'FeatureCollection', features }, TOKML_OPTS);
   try {
     const kmlDoc = new DOMParser().parseFromString(newKmlContent, 'text/xml');
     const newLayer = new L.KML(kmlDoc);

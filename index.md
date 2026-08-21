@@ -84,6 +84,10 @@ Vale la pena dirlo prima dell'installazione, non dopo.
   quella della visura, e le due possono differire.
 - **La consultazione del catasto richiede la connessione.** Senza rete restano le mappe scaricate e
   i livelli salvati, non l'interrogazione catastale.
+- **Non tutte le mappe di sfondo si salvano per l'uso offline.** Si scaricano l'ortofoto
+  nazionale, le carte tecniche regionali e i servizi che aggiungi tu; le mappe di base
+  internazionali restano online, perché i loro fornitori non consentono la copia massiva dei
+  tile. In elenco compaiono comunque, disattivate e col motivo accanto.
 - **La ricerca dei luoghi richiede la connessione**, e non suggerisce durante la digitazione.
 - **Trentino-Alto Adige non è coperto**: Trento e Bolzano hanno un catasto provinciale proprio
   (sistema tavolare), che i servizi dell'Agenzia delle Entrate non pubblicano.

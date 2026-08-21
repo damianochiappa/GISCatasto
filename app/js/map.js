@@ -331,10 +331,44 @@ const _GPS_OPTS = { enableHighAccuracy: true, timeout: 60000, maximumAge: 10000 
 let _gpsRetryTid = null;
 
 /* ── Flight detection ──
-   AGL = GPS ellipsoid altitude − terrain elevation (orthometric ≈ geoid surface).
-   The geoid undulation in Italy is ~43 m, so the raw difference underestimates AGL
-   by that amount. Threshold 200 m avoids false positives from drones or cliffs. */
-const _FLIGHT_AGL_M = 200;
+   On altitude above sea level, not on height above ground. Height above ground needs a terrain
+   model, the terrain model needs the network, and so the old rule was unavailable at ten
+   kilometres over the sea and perfectly available in the garden — exactly backwards. Altitude
+   above sea level is the GNSS fix plus the geoid table, both on board, so this works with no
+   connection at all.
+   6000 m cannot be reached from the ground: the highest road on Earth stops below 5900 m and no
+   cable car passes 3900. Anything else at that height — a glider, a balloon, a parachute — is
+   flying, which is the state this is trying to name, so it is not a false positive either.
+   (9000 m, above Everest, would make it a proof rather than an argument; 6000 keeps the panel
+   up through the climb and the descent, which is the half of a flight worth watching.) */
+const _FLIGHT_MSL_M = 6000;
+const _FLIGHT_CONFIRM_FIXES = 2;
+let _flightStreak = 0;      // consecutive fixes agreeing, signed: above sea level threshold or below
+let _flightState  = false;
+/* A height above ground is a difference between two uncertain numbers, and it is only worth
+   showing when it stands clear of that uncertainty. Both terms contribute:
+
+   - the GNSS altitude. The receiver reports its own vertical accuracy in coords.altitudeAccuracy,
+     which is the right quantity; where a device omits it, horizontal accuracy stands in at 1.5x,
+     because a constellation spread across the sky above you fixes height worse than position.
+   - the DEM. Copernicus at 90 m posts cannot follow a slope between houses, and two reputable
+     DEMs disagreed by 6.5 m at the very point this was verified on. 8 m is an estimate anchored
+     on that one measurement, not a published figure — and it is not yet known whether the served
+     model includes buildings and canopy, which would matter over a town or a wood.
+
+   Added in quadrature, the two errors being independent, and cleared by a factor of two before
+   anything is shown: at one sigma roughly a sixth of readings cross the line by chance, which is
+   precisely the flicker this rule exists to prevent. In the field test the residual on the ground
+   sat at 11 m and was stable across sessions — that is the DEM being low, not height, and it is
+   exactly the kind of number that must not be presented as height above ground. */
+const _AGL_DEM_SIGMA_M = 8;
+const _AGL_SIGMA_MARGIN = 2;
+function _aglIsMeaningful(agl, acc, altAcc) {
+  if (agl == null) return false;
+  const gnss = (isFinite(altAcc) && altAcc > 0) ? altAcc : 1.5 * (isFinite(acc) ? acc : 20);
+  const sigma = Math.sqrt(gnss * gnss + _AGL_DEM_SIGMA_M * _AGL_DEM_SIGMA_M);
+  return agl > _AGL_SIGMA_MARGIN * sigma;
+}
 let _gpsTerrainElev = null;
 let _gpsWasFlying   = false;
 let _smoothBearing  = null;
@@ -406,6 +440,7 @@ function gpsUpdate(pos) {
   const acc = pos.coords.accuracy;
   const spd = pos.coords.speed;
   const alt = pos.coords.altitude;
+  const altAcc = pos.coords.altitudeAccuracy;
   const ts  = pos.timestamp || Date.now();
 
   /* Moved, not rebuilt. Removing and re-adding the accuracy circle on every fix made it
@@ -419,16 +454,41 @@ function gpsUpdate(pos) {
   let utm = '--';
   try { const u = UTM.fromLatLng({lat: ll.lat, lng: ll.lng}); utm = `${u.zone} ${Math.round(u.x)} ${Math.round(u.y)}`; } catch(_) {}
 
+  /* Height above sea level, the only form worth showing or writing to a file. */
+  const altMsl = (typeof ellipsoidToMsl === 'function') ? ellipsoidToMsl(alt, ll.lat, ll.lng) : null;
+  const _agl = (altMsl != null && _gpsTerrainElev != null) ? (altMsl - _gpsTerrainElev) : null;
+  /* Two consecutive fixes to change state, either way: one wild altitude must not open the
+     panel and one dropout must not close it. A fix carrying no altitude says nothing in either
+     direction, so it leaves the state untouched. */
+  if (altMsl != null) {
+    if (altMsl > _FLIGHT_MSL_M) _flightStreak = _flightStreak > 0 ? _flightStreak + 1 : 1;
+    else                        _flightStreak = _flightStreak < 0 ? _flightStreak - 1 : -1;
+    if (_flightStreak >= _FLIGHT_CONFIRM_FIXES)       _flightState = true;
+    else if (_flightStreak <= -_FLIGHT_CONFIRM_FIXES) _flightState = false;
+  }
+  const _isFlying = _flightState;
+  /* One elevation on the ground, not two. Which of the two is nearer the truth is not settled:
+     at the point this was checked the DEM read 514 m, the GNSS fix corrected by the geoid read
+     525 m twice in separate sessions, and Google Earth put the ground at 520.5 — so the DEM was
+     the outlier and the fix was the repeatable one, the opposite of what one expects. What is
+     certain is that showing both invites the question of which to believe, and that the ~11 m
+     between them is the disagreement of two models rather than anything the user is standing on.
+     The terrain value is shown because it describes the ground under your feet, which is what
+     the question usually means. The GNSS altitude earns a row of its own only when it is
+     genuinely above that ground, or when there is no terrain to compare it with — the DEM needs
+     the network and the fix does not. */
+  const _showGnssAlt = altMsl != null && (_gpsTerrainElev == null || _aglIsMeaningful(_agl, acc, altAcc));
+
   const gpsDiv = document.createElement('div');
   gpsDiv.style.cssText = 'font-size:12px;font-family:monospace;line-height:1.9;min-width:200px';
   gpsDiv.innerHTML =
     `<div><b>GPS</b> &mdash; Acc: &plusmn;${Math.round(acc)} m` +
     (spd != null ? ` &mdash; ${(spd*3.6).toFixed(1)} km/h` : '') + '</div>' +
-    (alt != null ? `<div><b style="color:var(--accent)">ALT&nbsp; </b>${alt.toFixed(0)} m <small style="opacity:0.6">(WGS84)</small></div>` : '') +
+    (_showGnssAlt ? `<div><b style="color:var(--accent)">ALT&nbsp; </b>${altMsl.toFixed(0)} m <small style="opacity:0.6">(GPS, sul livello del mare)</small></div>` : '') +
     `<div><b style="color:var(--accent)">DD&nbsp;&nbsp; </b>${dd}</div>` +
     `<div><b style="color:var(--accent)">UTM&nbsp; </b>${utm}</div>` +
     `<div><b style="color:var(--accent)">MGRS </b>${mgrs}</div>` +
-    `<div><b style="color:var(--accent)">ELEV&nbsp;</b><span id="gps-popup-elev">fetching&hellip;</span></div>`;
+    `<div><b style="color:var(--accent)">ELEV&nbsp;</b><span class="gps-elev">fetching&hellip;</span></div>`;
   const cpBtn = document.createElement('button');
   cpBtn.className = 'draw-save-btn'; cpBtn.style.marginTop = '4px';
   cpBtn.textContent = '\uD83D\uDCCB Copia le coordinate';
@@ -440,13 +500,10 @@ function gpsUpdate(pos) {
   });
   gpsDiv.appendChild(cpBtn);
 
-  // Determine flying state using last known terrain elevation
-  const _agl = (alt != null && _gpsTerrainElev != null) ? (alt - _gpsTerrainElev) : null;
-  const _isFlying = _agl != null && _agl > _FLIGHT_AGL_M;
-
+  // _agl and _isFlying are computed with the popup above, since the popup depends on them.
   if (_isFlying !== _gpsWasFlying) {
     _gpsWasFlying = _isFlying;
-    toastMsg(_isFlying ? '\u2708 Modalit\u00e0 volo — AGL ' + Math.round(_agl) + ' m' : 'Modalit\u00e0 terra', _isFlying ? 'success' : '');
+    toastMsg(_isFlying ? '\u2708 Modalit\u00e0 volo — ' + Math.round(altMsl) + ' m' : 'Modalit\u00e0 terra', _isFlying ? 'success' : '');
     const fp = document.getElementById('flight-panel');
     if (fp) {
       fp.classList.toggle('hidden', !_isFlying);
@@ -462,7 +519,7 @@ function gpsUpdate(pos) {
     const _setFp = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
     _setFp('fp-spd', spd != null && spd >= 0 ? Math.round(spd * 3.6) : '--');
     _setFp('fp-agl', _agl != null ? Math.round(_agl) : '--');
-    _setFp('fp-alt', alt != null ? Math.round(alt) : '--');
+    _setFp('fp-alt', altMsl != null ? Math.round(altMsl) : '--');
     _setFp('fp-hdg', hdg != null && isFinite(hdg) ? Math.round(hdg) + dir : '--');
   }
 
@@ -499,8 +556,16 @@ function gpsUpdate(pos) {
   if (typeof fetchElevation === 'function') {
     fetchElevation(ll.lat, ll.lng).then(val => {
       if (val != null) _gpsTerrainElev = val;
-      const el = document.getElementById('gps-popup-elev');
-      if (el) el.textContent = val != null ? val + ' m' + (_agl != null ? '  (AGL ' + Math.round(_agl) + ' m)' : '') : '--';
+      /* Scoped to the div this fix built, never to whatever popup happens to be on screen.
+         With document.getElementById it patched the balloon the user had open — frozen from an
+         earlier fix — so the ELEV row advanced while the ALT row above it stood still, and the
+         two could contradict each other inside one popup. */
+      const el = gpsDiv.querySelector('.gps-elev');
+      /* The AGL suffix appears on the same terms as the ALT row above: only when the height
+         above ground is larger than the uncertainty of the two numbers it came from. */
+      if (el) el.textContent = val != null
+        ? val + ' m' + (_aglIsMeaningful(_agl, acc, altAcc) ? '  (AGL ' + Math.round(_agl) + ' m)' : '')
+        : '--';
     });
   }
 
@@ -623,7 +688,9 @@ function gpsUpdate(pos) {
   _prevGpsLL = ll;
 
   // Forward to GPS track
-  if (typeof trackActive !== 'undefined' && trackActive) updateTrack(ll, alt, ts);
+  /* altMsl, not alt: a GPX <ele> is defined as height above sea level, and the elevation
+     profile is read against contour lines that mean the same thing. */
+  if (typeof trackActive !== 'undefined' && trackActive) updateTrack(ll, altMsl, ts);
   // Forward to navigation
   if (typeof navGpsUpdate === 'function') navGpsUpdate(ll);
   if (typeof navHudUpdate === 'function') navHudUpdate(ll, spd);

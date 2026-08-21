@@ -64,8 +64,19 @@ utm.js / utmref.js
   Author: Johannes Rudolph <johannes.rudolph@gmx.com>
   License: not explicitly declared; contains MIT/LGPL-licensed fragments (cited inline)
 
+EGM96 geoid undulation grid (app/lib/geoid-egm96.js)
+  Source: EGM96, NGA/NASA global gravity model — public domain
+  Sampled from the 15-minute grid distributed with GeographicLib (egm96-15.pgm)
+  down to 1 degree; the lookup code around it is part of this program.
+  https://geographiclib.sourceforge.io/  https://earth-info.nga.mil/
+
 OSRM routing (runtime API, no local library)
   License: BSD-2-Clause (public server — project-osrm.org, routing.openstreetmap.de)
+
+Open-Meteo elevation (runtime API, no local library)
+  Free for non-commercial use; data CC BY 4.0
+  Terrain elevation derived from the Copernicus DEM (ESA / European Union)
+  https://open-meteo.com/
 
 Default tile providers (public distribution)
   - Satellite Hybrid layer ("google_hybrid" key): Stadia Maps "alidade_satellite" (BSD-2-Clause attribution)

@@ -31,12 +31,15 @@ Questo repository contiene il codice sorgente della versione pubblicata, come ri
   trasparenza del layer conservati.
 - **Livelli tuoi** — WMS, WFS, WMTS/XYZ e ArcGIS MapServer aggiunti per URL, con opacità, colore,
   filtri e ordine di sovrapposizione. Restano salvati e si ricaricano al lancio successivo.
-- **File** — import ed export di KML, KMZ, GeoJSON e GPX, con modifica dei vertici, popup degli
-  attributi e dissolvenza dei poligoni.
+- **File** — importi KML, KMZ, GeoJSON e GPX ed esporti in KML, GeoJSON e GPX (un KMZ si apre ma
+  si riscrive come KML), con modifica dei vertici, popup degli attributi e dissolvenza dei
+  poligoni.
 - **Uso senza connessione** — delimiti un'area disegnando un rettangolo sulla mappa (o con un KML
-  che hai già) e scarichi i tile di quella zona prima di partire.
+  che hai già) e scarichi le mappe di quella zona prima di partire. Sono scaricabili l'ortofoto
+  nazionale, le CTR regionali e i servizi che aggiungi tu; le mappe di base internazionali
+  restano online, perché i loro fornitori non consentono la copia massiva dei tile.
 - **Posizione e misure** — coordinate in DD, DMS, UTM e MGRS, bussola, tracce GPS, misura di
-  distanze e aree sull’ellissoide WGS 84, conversione fra sistemi di riferimento.
+  distanze geodetiche sull’ellissoide WGS 84 e aree sulla sua sfera autalica, conversione fra sistemi di riferimento.
 - **Navigazione** — percorso verso una destinazione in auto, a piedi o in bicicletta.
 
 ## Cosa non fa
