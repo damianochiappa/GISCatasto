@@ -6,7 +6,11 @@
 /* =====================================================
    ELEVATION — Open-Meteo Elevation API wrapper
    fetchElevation(lat, lon) → Promise<number|null>
-   updateGpsElevation(lat, lon) — throttled, for GPS
+
+   Asked for one point at a time, on a deliberate gesture: the long-press menu. It used to also
+   feed a running readout in the status bar, which meant a request to a third party for merely
+   panning the map — every other figure in that bar is arithmetic done on this device and true
+   with no network, and this one was neither.
 ===================================================== */
 
 (function() {
@@ -38,39 +42,6 @@
       _cache.set(key, val);
       return val;
     } catch(_) { return null; }
-  };
-
-  /* ---- throttled GPS elevation updater ---- */
-  let _lastLat = null, _lastLon = null, _debounceTimer = null;
-  const _MOVE_THRESHOLD = 0.001; // ~100 m
-
-  window.updateGpsElevation = function updateGpsElevation(lat, lon) {
-    // Only re-query if moved significantly
-    if (_lastLat !== null) {
-      const dlat = Math.abs(lat - _lastLat);
-      const dlon = Math.abs(lon - _lastLon);
-      if (dlat < _MOVE_THRESHOLD && dlon < _MOVE_THRESHOLD) return;
-    }
-
-    /* The reference moves now, not when the query eventually runs. While it only moved on a
-       completed query, every fix past the threshold re-armed the debounce — and at roughly one
-       fix per second the two-second timer never got to fire, so the elevation in the status bar
-       froze for as long as the user kept walking and only caught up once they stopped. */
-    _lastLat = lat; _lastLon = lon;
-    clearTimeout(_debounceTimer);
-    _debounceTimer = setTimeout(async () => {
-      const elevItem = document.getElementById('sb-elev-item');
-      const elevEl   = document.getElementById('sb-elev');
-      if (elevItem && elevEl) {
-        elevEl.textContent = '…';
-        elevItem.style.display = '';
-      }
-      const val = await fetchElevation(lat, lon);
-      if (elevItem && elevEl) {
-        elevEl.textContent = val != null ? val + ' m' : '--';
-        elevItem.style.display = '';
-      }
-    }, 2000);
   };
 
 })();

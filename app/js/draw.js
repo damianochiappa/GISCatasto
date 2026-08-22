@@ -46,11 +46,17 @@ const MARKER_ICONS = [
     html: _mki('<polygon points="12,3 22,19 2,19" fill="#2e7d52" stroke="white" stroke-width="1.5"/><rect x="9" y="14" width="6" height="5" fill="rgba(255,255,255,0.85)"/>') },
 ];
 
+/* The box is the tap target, and it is deliberately bigger than the symbol drawn inside it.
+   A CSS pixel is a dp here, so the old 28 px box was 28 dp against the 48 Android asks for
+   and the 44 Apple does: a finger aimed at the middle of the glyph missed often enough that
+   a marker read as dead. The 22 px symbol is centred in a 44 px box and the anchor moves by
+   the same amount, so the glyph's top-left stays at anchor (-14,-26) and NOTHING moves on
+   screen — only the invisible area that answers the touch grows, centred on the symbol. */
 function makeEmojiIcon(iconId) {
   const icon = MARKER_ICONS.find(i => i.e === iconId) || MARKER_ICONS[0];
   return L.divIcon({
-    html: `<span style="display:block;filter:drop-shadow(0 1px 3px rgba(0,0,0,.8));line-height:1">${icon.html}</span>`,
-    className: '', iconSize: [28,28], iconAnchor: [14,26], popupAnchor: [0,-28]
+    html: `<span style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;filter:drop-shadow(0 1px 3px rgba(0,0,0,.8));line-height:1">${icon.html}</span>`,
+    className: '', iconSize: [44,44], iconAnchor: [25,37], popupAnchor: [0,-28]
   });
 }
 
@@ -191,7 +197,22 @@ function _openDrawPopup(layer, type) {
   });
   popup.appendChild(delBtn);
 
-  layer.bindPopup(popup, { maxWidth: 280 });
+  /* autoPan off. Leaflet's default slides the map until the balloon fits, and since the
+     popup started carrying the geometric readout it rarely fits in the upper half of the
+     screen — which is exactly where you drop a marker on something you are looking at. The
+     shape then moves out from under the finger that just tapped it and the next tap lands
+     on nothing: the marker looks untappable, and it is the map that ran away. The WFS
+     popups were given the same option, for the same reason. */
+  layer.bindPopup(popup, { maxWidth: 280, autoPan: false });
+  /* Leaflet binds a click handler of its own, and on a MARKER that handler toggles: it closes
+     a popup that is already on the map. Ours is registered first and opens it, so Leaflet's
+     turn always found it open and shut it again in the same tap — the marker read as dead,
+     and the enlarged tap target above could do nothing about it because the tap was landing.
+     Paths were immune (Leaflet never toggles a Path), which is why only markers showed it.
+     One opener is enough and it has to be ours, because ours rebuilds the readout from the
+     geometry as it is now. Keypress goes through the same toggle, so it goes too. */
+  layer.off('click', layer._openPopup);
+  layer.off('keypress', layer._onKeyPress);
   layer.openPopup();
 }
 
@@ -201,9 +222,21 @@ map.on(L.Draw.Event.CREATED, e => {
   _assignDrawPane(layer);
   drawnItems.addLayer(layer);
   updateDrawStats(layer);
-  layer._geoName = ''; layer._geoDesc = ''; layer._geoIcon = 'pos'; layer._geoColor = '#4f8ef7';
+  layer._geoName = ''; layer._geoDesc = ''; layer._geoIcon = 'pos';
+  /* The colour the shape was actually drawn in, not a fixed blue. Each tool has a colour of
+     its own in the draw control (map.js: line blue, rectangle amber, circle green) and this
+     assignment ignored all of them, so a rectangle was amber on screen while everything that
+     read _geoColor said blue: the popup's picker, the KML the ⬇ button wrote, and the restore
+     at the next launch — which repainted it blue, the shape changing colour on its own. A
+     marker has no options.color, so it keeps the blue that has always been its default. */
+  layer._geoColor = (layer.options && layer.options.color) || '#4f8ef7';
   layer._geoType = type; layer._geoOpacity = 1;
   if (type === 'marker') layer.setIcon(makeEmojiIcon('pos'));
+  /* Same handler every other path attaches. Without it the popup bound below is the only one
+     the shape ever gets, built from the geometry it had when it was drawn: reshape it and the
+     measurements stay behind. Shapes restored from storage did not have the problem, which is
+     why it looked intermittent — it only affected shapes drawn in the running session. */
+  layer.on('click', () => _openDrawPopup(layer, layer._geoType));
   _openDrawPopup(layer, type);
   _saveDraws();
   toastMsg('Forma aggiunta e salvata', 'success');

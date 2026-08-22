@@ -565,80 +565,89 @@ function enhanceKMLSublayer(layer) {
     layer.unbindPopup();
   }
 
-  const div = document.createElement('div');
-  div.style.minWidth = '210px';
+  /* Built on open, not on load. A KML is enhanced feature by feature the moment it is
+     parsed, and the geometry section below measures geodesics per vertex pair: on a file
+     with a couple of thousand shapes that is most of a second spent on popups the user may
+     never open. Leaflet takes a function as popup content and calls it at open time.
+     What is read BEFORE this point stays outside on purpose — existingHTML has to be taken
+     from the popup L.KML bound, which our own binding is about to replace. */
+  const build = () => {
+    const div = document.createElement('div');
+    div.style.minWidth = '210px';
 
-  const kmlProps = layer._kmlProps;
-  /* Two kinds of key are hidden from the attribute table: the ones this app generated on a
-     previous export (they are recomputed in the geometry section below, and a stale copy
-     next to a fresh one is worse than no copy) and the simplestyle keys, which tokml drops
-     into ExtendedData along with everything else and which mean nothing to the user. */
-  const _hidden = GEOM_PROP_KEYS.concat(STYLE_PROP_KEYS);
-  const _visible = kmlProps
-    ? Object.entries(kmlProps).filter(([k]) => _hidden.indexOf(k) === -1)
-    : [];
-  if (_visible.length) {
-    const propsDiv = document.createElement('div');
-    propsDiv.style.cssText = 'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)';
-    const rows = _visible
-      .map(([k,v]) => {
-        const val = k === 'description' ? stripGeomDescription(v) : (v ?? '');
-        return `<tr><td style="opacity:.65;padding-right:8px;font-size:11px;font-family:monospace;white-space:nowrap">${k}</td><td style="font-size:11px;font-family:monospace">${val}</td></tr>`;
-      })
-      .join('');
-    const tbl = document.createElement('table');
-    tbl.style.cssText = 'width:100%;margin-bottom:2px';
-    tbl.innerHTML = rows;
-    propsDiv.appendChild(tbl);
-    div.appendChild(propsDiv);
-  } else if (existingHTML) {
-    const info = document.createElement('div');
-    info.innerHTML = stripGeomDescription(existingHTML);
-    info.style.cssText = 'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border);font-size:12px';
-    div.appendChild(info);
-  }
+    const kmlProps = layer._kmlProps;
+    /* Two kinds of key are hidden from the attribute table: the ones this app generated on a
+       previous export (they are recomputed in the geometry section below, and a stale copy
+       next to a fresh one is worse than no copy) and the simplestyle keys, which tokml drops
+       into ExtendedData along with everything else and which mean nothing to the user. */
+    const _hidden = GEOM_PROP_KEYS.concat(STYLE_PROP_KEYS);
+    const _visible = kmlProps
+      ? Object.entries(kmlProps).filter(([k]) => _hidden.indexOf(k) === -1)
+      : [];
+    if (_visible.length) {
+      const propsDiv = document.createElement('div');
+      propsDiv.style.cssText = 'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)';
+      const rows = _visible
+        .map(([k,v]) => {
+          const val = k === 'description' ? stripGeomDescription(v) : (v ?? '');
+          return `<tr><td style="opacity:.65;padding-right:8px;font-size:11px;font-family:monospace;white-space:nowrap">${k}</td><td style="font-size:11px;font-family:monospace">${val}</td></tr>`;
+        })
+        .join('');
+      const tbl = document.createElement('table');
+      tbl.style.cssText = 'width:100%;margin-bottom:2px';
+      tbl.innerHTML = rows;
+      propsDiv.appendChild(tbl);
+      div.appendChild(propsDiv);
+    } else if (existingHTML) {
+      const info = document.createElement('div');
+      info.innerHTML = stripGeomDescription(existingHTML);
+      info.style.cssText = 'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border);font-size:12px';
+      div.appendChild(info);
+    }
 
-  // Measurements of the geometry as loaded, computed here rather than trusted from the file.
-  const geomSec = geomInfoSectionForLayer(layer);
-  if (geomSec) {
-    // The attribute block above already draws a rule; two adjacent lines look like a glitch.
-    if (div.childNodes.length) { geomSec.style.borderTop = 'none'; geomSec.style.paddingTop = '0'; geomSec.style.marginTop = '0'; }
-    div.appendChild(geomSec);
-  }
+    // Measurements of the geometry as loaded, computed here rather than trusted from the file.
+    const geomSec = geomInfoSectionForLayer(layer);
+    if (geomSec) {
+      // The attribute block above already draws a rule; two adjacent lines look like a glitch.
+      if (div.childNodes.length) { geomSec.style.borderTop = 'none'; geomSec.style.paddingTop = '0'; geomSec.style.marginTop = '0'; }
+      div.appendChild(geomSec);
+    }
 
-  // Per-feature style controls were removed: color/weight/opacity for KML
-  // layers are managed from the sidebar layer-item (single source of truth,
-  // persisted to localStorage). Markers keep the icon picker because that's
-  // a per-feature attribute, not a layer-wide one.
-  if (isMarker) {
-    const styleHdr = document.createElement('div');
-    styleHdr.style.cssText = 'font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px';
-    styleHdr.textContent = 'Icona';
-    div.appendChild(styleHdr);
+    // Per-feature style controls were removed: color/weight/opacity for KML
+    // layers are managed from the sidebar layer-item (single source of truth,
+    // persisted to localStorage). Markers keep the icon picker because that's
+    // a per-feature attribute, not a layer-wide one.
+    if (isMarker) {
+      const styleHdr = document.createElement('div');
+      styleHdr.style.cssText = 'font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px';
+      styleHdr.textContent = 'Icona';
+      div.appendChild(styleHdr);
 
-    const pickerDiv = document.createElement('div');
-    pickerDiv.className = 'icon-picker';
-    let activeBtn = null;
-    MARKER_ICONS.forEach(icon => {
-      const btn = document.createElement('button');
-      btn.className = 'icon-btn'; btn.title = icon.l; btn.innerHTML = icon.html;
-      btn.addEventListener('click', ev => {
-        ev.stopPropagation();
-        if (activeBtn) activeBtn.classList.remove('selected');
-        btn.classList.add('selected'); activeBtn = btn;
-        layer._geoIcon = icon.e;
-        if (typeof layer.setIcon === 'function') layer.setIcon(makeEmojiIcon(icon.e));
-        setTimeout(() => layer.openPopup(), 30);
+      const pickerDiv = document.createElement('div');
+      pickerDiv.className = 'icon-picker';
+      let activeBtn = null;
+      MARKER_ICONS.forEach(icon => {
+        const btn = document.createElement('button');
+        btn.className = 'icon-btn'; btn.title = icon.l; btn.innerHTML = icon.html;
+        btn.addEventListener('click', ev => {
+          ev.stopPropagation();
+          if (activeBtn) activeBtn.classList.remove('selected');
+          btn.classList.add('selected'); activeBtn = btn;
+          layer._geoIcon = icon.e;
+          if (typeof layer.setIcon === 'function') layer.setIcon(makeEmojiIcon(icon.e));
+          setTimeout(() => layer.openPopup(), 30);
+        });
+        pickerDiv.appendChild(btn);
       });
-      pickerDiv.appendChild(btn);
-    });
-    div.appendChild(pickerDiv);
-  }
+      div.appendChild(pickerDiv);
+    }
 
-  // Prevent popup interactions from leaking to the map (nav pick mode, scroll-zoom)
-  L.DomEvent.disableClickPropagation(div);
-  L.DomEvent.disableScrollPropagation(div);
-  layer.bindPopup(div, { maxWidth: 280 });
+    // Prevent popup interactions from leaking to the map (nav pick mode, scroll-zoom)
+    L.DomEvent.disableClickPropagation(div);
+    L.DomEvent.disableScrollPropagation(div);
+    return div;
+  };
+  layer.bindPopup(build, { maxWidth: 280 });
 }
 
 /* ===== FILE OVERLAY PERSISTENCE ===== */
@@ -818,34 +827,46 @@ function _flattenKMLLeafLayers(group, result) {
    all and looked inert. Attribute values are escaped: unlike the KML path, whose values come
    from ExtendedData this app wrote, these can be arbitrary strings from any file. */
 function _bindFeaturePopup(feature, layer) {
-  const div = document.createElement('div');
-  div.style.minWidth = '210px';
   const props = feature && feature.properties;
   const hidden = GEOM_PROP_KEYS.concat(STYLE_PROP_KEYS);
   const visible = props
     ? Object.entries(props).filter(([k, v]) => hidden.indexOf(k) === -1 && v !== null && v !== '' && typeof v !== 'object')
     : [];
-  if (visible.length) {
-    const propsDiv = document.createElement('div');
-    propsDiv.style.cssText = 'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)';
-    const tbl = document.createElement('table');
-    tbl.style.cssText = 'width:100%;font-size:11px;font-family:monospace';
-    tbl.innerHTML = visible.map(([k, v]) => {
-      const val = k === 'description' ? stripGeomDescription(v) : v;
-      return `<tr><td style="opacity:.65;padding-right:8px;white-space:nowrap">${_xmlEsc(k)}</td><td>${_xmlEsc(val)}</td></tr>`;
-    }).join('');
-    propsDiv.appendChild(tbl);
-    div.appendChild(propsDiv);
-  }
-  const geomSec = geomInfoSection(feature);
-  if (geomSec) {
-    if (div.childNodes.length) { geomSec.style.borderTop = 'none'; geomSec.style.paddingTop = '0'; geomSec.style.marginTop = '0'; }
-    div.appendChild(geomSec);
-  }
-  if (!div.childNodes.length) return;
-  L.DomEvent.disableClickPropagation(div);
-  L.DomEvent.disableScrollPropagation(div);
-  layer.bindPopup(div, { maxWidth: 280 });
+  /* Whether there is anything to show is decided now — it is a scan of a handful of keys —
+     but WHAT to show is built later. geomInfoSection would otherwise measure every feature in
+     the file at load: geodesics per vertex pair, on the main thread, for popups most of which
+     are never opened. A section exists whenever the geometry has a type, so this predicate is
+     the same answer the old "drop a popup with no children" gave, reached without measuring. */
+  const hasGeom = !!(feature && feature.geometry && feature.geometry.type);
+  if (!visible.length && !hasGeom) return;
+
+  /* Leaflet accepts a function as popup content and calls it on every open, so the cost falls
+     on the popup actually opened and the numbers are recomputed rather than remembered. */
+  const build = () => {
+    const div = document.createElement('div');
+    div.style.minWidth = '210px';
+    if (visible.length) {
+      const propsDiv = document.createElement('div');
+      propsDiv.style.cssText = 'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)';
+      const tbl = document.createElement('table');
+      tbl.style.cssText = 'width:100%;font-size:11px;font-family:monospace';
+      tbl.innerHTML = visible.map(([k, v]) => {
+        const val = k === 'description' ? stripGeomDescription(v) : v;
+        return `<tr><td style="opacity:.65;padding-right:8px;white-space:nowrap">${_xmlEsc(k)}</td><td>${_xmlEsc(val)}</td></tr>`;
+      }).join('');
+      propsDiv.appendChild(tbl);
+      div.appendChild(propsDiv);
+    }
+    const geomSec = geomInfoSection(feature);
+    if (geomSec) {
+      if (div.childNodes.length) { geomSec.style.borderTop = 'none'; geomSec.style.paddingTop = '0'; geomSec.style.marginTop = '0'; }
+      div.appendChild(geomSec);
+    }
+    L.DomEvent.disableClickPropagation(div);
+    L.DomEvent.disableScrollPropagation(div);
+    return div;
+  };
+  layer.bindPopup(build, { maxWidth: 280 });
 }
 
 /* ===== SHARED LAYER BUILDER ===== */

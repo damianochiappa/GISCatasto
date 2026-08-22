@@ -259,10 +259,19 @@ map.addControl(new L.Control.Draw({
   position: 'topleft',
   edit: { featureGroup: drawnItems, remove: false, poly: { allowIntersection: true } },
   draw: {
-    polygon:  { allowIntersection: true, showArea: true },
+    /* The polygon had no shapeOptions, so it drew in Leaflet.Draw's own #3388ff — a fourth
+       blue, close enough to the app's to look like a rendering artefact rather than a choice,
+       and not in the swatch list every colour picker here offers. */
+    /* fillOpacity 0.3, not Leaflet.Draw's 0.2. Everywhere else the app states the fill as
+       three tenths of the shape's opacity — the slider in the popup, the restore at launch,
+       the fill-opacity written into an exported KML — and only the moment of drawing used the
+       library's own default. The shape therefore came back very slightly more solid than it
+       was drawn, in the same silent way the colour used to change. One rule, stated once here
+       too. Polylines have no fill and take none. */
+    polygon:  { allowIntersection: true, showArea: true, shapeOptions: { color: '#4f8ef7', weight: 2, fillOpacity: 0.3 } },
     polyline: { shapeOptions: { color: '#4f8ef7', weight: 3 } },
-    rectangle:{ shapeOptions: { color: '#f0a830', weight: 2 } },
-    circle:   { shapeOptions: { color: '#52c97e', weight: 2 } },
+    rectangle:{ shapeOptions: { color: '#f0a830', weight: 2, fillOpacity: 0.3 } },
+    circle:   { shapeOptions: { color: '#52c97e', weight: 2, fillOpacity: 0.3 } },
     marker: true, circlemarker: false
   }
 }));
@@ -345,31 +354,6 @@ const _FLIGHT_MSL_M = 6000;
 const _FLIGHT_CONFIRM_FIXES = 2;
 let _flightStreak = 0;      // consecutive fixes agreeing, signed: above sea level threshold or below
 let _flightState  = false;
-/* A height above ground is a difference between two uncertain numbers, and it is only worth
-   showing when it stands clear of that uncertainty. Both terms contribute:
-
-   - the GNSS altitude. The receiver reports its own vertical accuracy in coords.altitudeAccuracy,
-     which is the right quantity; where a device omits it, horizontal accuracy stands in at 1.5x,
-     because a constellation spread across the sky above you fixes height worse than position.
-   - the DEM. Copernicus at 90 m posts cannot follow a slope between houses, and two reputable
-     DEMs disagreed by 6.5 m at the very point this was verified on. 8 m is an estimate anchored
-     on that one measurement, not a published figure — and it is not yet known whether the served
-     model includes buildings and canopy, which would matter over a town or a wood.
-
-   Added in quadrature, the two errors being independent, and cleared by a factor of two before
-   anything is shown: at one sigma roughly a sixth of readings cross the line by chance, which is
-   precisely the flicker this rule exists to prevent. In the field test the residual on the ground
-   sat at 11 m and was stable across sessions — that is the DEM being low, not height, and it is
-   exactly the kind of number that must not be presented as height above ground. */
-const _AGL_DEM_SIGMA_M = 8;
-const _AGL_SIGMA_MARGIN = 2;
-function _aglIsMeaningful(agl, acc, altAcc) {
-  if (agl == null) return false;
-  const gnss = (isFinite(altAcc) && altAcc > 0) ? altAcc : 1.5 * (isFinite(acc) ? acc : 20);
-  const sigma = Math.sqrt(gnss * gnss + _AGL_DEM_SIGMA_M * _AGL_DEM_SIGMA_M);
-  return agl > _AGL_SIGMA_MARGIN * sigma;
-}
-let _gpsTerrainElev = null;
 let _gpsWasFlying   = false;
 let _smoothBearing  = null;
 let _gpsViewCone    = null;
@@ -440,7 +424,6 @@ function gpsUpdate(pos) {
   const acc = pos.coords.accuracy;
   const spd = pos.coords.speed;
   const alt = pos.coords.altitude;
-  const altAcc = pos.coords.altitudeAccuracy;
   const ts  = pos.timestamp || Date.now();
 
   /* Moved, not rebuilt. Removing and re-adding the accuracy circle on every fix made it
@@ -454,9 +437,14 @@ function gpsUpdate(pos) {
   let utm = '--';
   try { const u = UTM.fromLatLng({lat: ll.lat, lng: ll.lng}); utm = `${u.zone} ${Math.round(u.x)} ${Math.round(u.y)}`; } catch(_) {}
 
-  /* Height above sea level, the only form worth showing or writing to a file. */
+  /* Height above sea level: the fix from the receiver, corrected by the geoid table on board.
+     It is the one altitude this app has — the track, the GPX <ele>, the elevation profile and
+     the flight panel all record exactly this number, so the figure read here is the figure
+     written there. The terrain model used to hold a second row in this balloon and fed nothing
+     else; two figures for one place, differing by ten metres, with the one on screen not the
+     one being saved. Terrain is now asked for on one gesture only — the long-press menu — and
+     answers about the point pressed, not about where the receiver thinks it is. */
   const altMsl = (typeof ellipsoidToMsl === 'function') ? ellipsoidToMsl(alt, ll.lat, ll.lng) : null;
-  const _agl = (altMsl != null && _gpsTerrainElev != null) ? (altMsl - _gpsTerrainElev) : null;
   /* Two consecutive fixes to change state, either way: one wild altitude must not open the
      panel and one dropout must not close it. A fix carrying no altitude says nothing in either
      direction, so it leaves the state untouched. */
@@ -467,28 +455,18 @@ function gpsUpdate(pos) {
     else if (_flightStreak <= -_FLIGHT_CONFIRM_FIXES) _flightState = false;
   }
   const _isFlying = _flightState;
-  /* One elevation on the ground, not two. Which of the two is nearer the truth is not settled:
-     at the point this was checked the DEM read 514 m, the GNSS fix corrected by the geoid read
-     525 m twice in separate sessions, and Google Earth put the ground at 520.5 — so the DEM was
-     the outlier and the fix was the repeatable one, the opposite of what one expects. What is
-     certain is that showing both invites the question of which to believe, and that the ~11 m
-     between them is the disagreement of two models rather than anything the user is standing on.
-     The terrain value is shown because it describes the ground under your feet, which is what
-     the question usually means. The GNSS altitude earns a row of its own only when it is
-     genuinely above that ground, or when there is no terrain to compare it with — the DEM needs
-     the network and the fix does not. */
-  const _showGnssAlt = altMsl != null && (_gpsTerrainElev == null || _aglIsMeaningful(_agl, acc, altAcc));
 
   const gpsDiv = document.createElement('div');
   gpsDiv.style.cssText = 'font-size:12px;font-family:monospace;line-height:1.9;min-width:200px';
   gpsDiv.innerHTML =
     `<div><b>GPS</b> &mdash; Acc: &plusmn;${Math.round(acc)} m` +
     (spd != null ? ` &mdash; ${(spd*3.6).toFixed(1)} km/h` : '') + '</div>' +
-    (_showGnssAlt ? `<div><b style="color:var(--accent)">ALT&nbsp; </b>${altMsl.toFixed(0)} m <small style="opacity:0.6">(GPS, sul livello del mare)</small></div>` : '') +
+    `<div><b style="color:var(--accent)">ALT&nbsp; </b>` +
+      (altMsl != null ? `${altMsl.toFixed(0)} m <small style="opacity:0.6">(GPS, sul livello del mare)</small>` : '--') +
+    `</div>` +
     `<div><b style="color:var(--accent)">DD&nbsp;&nbsp; </b>${dd}</div>` +
     `<div><b style="color:var(--accent)">UTM&nbsp; </b>${utm}</div>` +
-    `<div><b style="color:var(--accent)">MGRS </b>${mgrs}</div>` +
-    `<div><b style="color:var(--accent)">ELEV&nbsp;</b><span class="gps-elev">fetching&hellip;</span></div>`;
+    `<div><b style="color:var(--accent)">MGRS </b>${mgrs}</div>`;
   const cpBtn = document.createElement('button');
   cpBtn.className = 'draw-save-btn'; cpBtn.style.marginTop = '4px';
   cpBtn.textContent = '\uD83D\uDCCB Copia le coordinate';
@@ -500,7 +478,7 @@ function gpsUpdate(pos) {
   });
   gpsDiv.appendChild(cpBtn);
 
-  // _agl and _isFlying are computed with the popup above, since the popup depends on them.
+  // _isFlying is settled with the popup above, since the marker shape depends on it.
   if (_isFlying !== _gpsWasFlying) {
     _gpsWasFlying = _isFlying;
     toastMsg(_isFlying ? '\u2708 Modalit\u00e0 volo — ' + Math.round(altMsl) + ' m' : 'Modalit\u00e0 terra', _isFlying ? 'success' : '');
@@ -518,7 +496,9 @@ function gpsUpdate(pos) {
     const dir  = (hdg != null && isFinite(hdg)) ? ' ' + dirs[Math.round(hdg / 45) % 8] : '';
     const _setFp = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
     _setFp('fp-spd', spd != null && spd >= 0 ? Math.round(spd * 3.6) : '--');
-    _setFp('fp-agl', _agl != null ? Math.round(_agl) : '--');
+    /* Above sea level, not above ground: height above ground needs a terrain model, the model
+       needs the network, and in the one place this panel exists for there is none. The altitude
+       is the receiver's own, corrected by the geoid table on board — no staleness, no lookup. */
     _setFp('fp-alt', altMsl != null ? Math.round(altMsl) : '--');
     _setFp('fp-hdg', hdg != null && isFinite(hdg) ? Math.round(hdg) + dir : '--');
   }
@@ -552,22 +532,7 @@ function gpsUpdate(pos) {
      auto-pan on every fix, so what stays on screen is the reading that was tapped for. */
   if (!_popupWasOpen && gpsMarker.getPopup()) gpsMarker.setPopupContent(gpsDiv);
 
-  // Fetch terrain elevation: updates popup label + refreshes _gpsTerrainElev for next fix
-  if (typeof fetchElevation === 'function') {
-    fetchElevation(ll.lat, ll.lng).then(val => {
-      if (val != null) _gpsTerrainElev = val;
-      /* Scoped to the div this fix built, never to whatever popup happens to be on screen.
-         With document.getElementById it patched the balloon the user had open — frozen from an
-         earlier fix — so the ELEV row advanced while the ALT row above it stood still, and the
-         two could contradict each other inside one popup. */
-      const el = gpsDiv.querySelector('.gps-elev');
-      /* The AGL suffix appears on the same terms as the ALT row above: only when the height
-         above ground is larger than the uncertainty of the two numbers it came from. */
-      if (el) el.textContent = val != null
-        ? val + ' m' + (_aglIsMeaningful(_agl, acc, altAcc) ? '  (AGL ' + Math.round(_agl) + ' m)' : '')
-        : '--';
-    });
-  }
+
 
   if (!gpsFirstFix) { gpsFirstFix = true; map.setView(ll, Math.max(map.getZoom(), 15)); }
   else if (typeof navIsActive === 'function' && navIsActive() && window._navFollowing) { map.panTo(ll, { animate: true, duration: 0.3 }); }
@@ -592,9 +557,6 @@ function gpsUpdate(pos) {
     spdEl.textContent = (spd != null && spd >= 0) ? (spd * 3.6).toFixed(1) + ' km/h' : '--';
     spdItem.style.display = '';
   }
-
-  // Update terrain elevation in statusbar (throttled)
-  if (typeof updateGpsElevation === 'function') updateGpsElevation(ll.lat, ll.lng);
 
   // Rotate map to heading during active navigation (ground mode only), but only while
   // genuinely moving. Travel direction comes from GPS course / position delta — NOT the
@@ -707,8 +669,6 @@ function gpsError(err, btn) {
     if (gpsWatchId !== null) { navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; }
     const accItem = document.getElementById('sb-acc-item');
     if (accItem) accItem.style.display = 'none';
-    const elevItem = document.getElementById('sb-elev-item');
-    if (elevItem) elevItem.style.display = 'none';
     return;
   }
   // Timeout / position-unavailable are TRANSIENT (cold fix, indoors, battery throttling): the
@@ -769,8 +729,6 @@ function toggleGPS(btn) {
     if (brgItem) brgItem.style.display = 'none';
     const spdItem = document.getElementById('sb-spd-item');
     if (spdItem) spdItem.style.display = 'none';
-    const elevItem = document.getElementById('sb-elev-item');
-    if (elevItem) elevItem.style.display = 'none';
   }
 }
 
@@ -928,10 +886,17 @@ map.on('contextmenu', e => {
     map.closePopup();
     const layer = L.marker([lat, lng], { icon: makeEmojiIcon('pos') });
     layer._geoName = ''; layer._geoDesc = ''; layer._geoIcon = 'pos'; layer._geoColor = '#4f8ef7';
+    /* The same fields and the same wiring a drawn marker gets. Three were missing here: the
+       type, so a later popup could not tell it was a marker and dropped the icon picker; the
+       click handler, so the popup was never rebuilt; and the save, so a marker added and left
+       alone was gone at the next launch. */
+    layer._geoType = 'marker'; layer._geoOpacity = 1;
     _assignDrawPane(layer);   // no-op for markers (kept for a single consistent add path)
     drawnItems.addLayer(layer);
     updateDrawStats(layer);
+    layer.on('click', () => _openDrawPopup(layer, layer._geoType));
     _openDrawPopup(layer, 'marker');
+    if (typeof _saveDraws === 'function') _saveDraws();
   });
   div.appendChild(mrkBtn);
 
@@ -1983,36 +1948,46 @@ const _WFSLayer = L.Layer.extend({
               }
             });
 
-            const p = f.properties;
-            const popupEl = document.createElement('div');
-            if (p && Object.keys(p).length) {
-              const rows = Object.entries(p).slice(0, 8)
-                .map(([k,v]) => `<tr><td style="opacity:.65;padding-right:6px">${k}</td><td>${v ?? ''}</td></tr>`)
-                .join('');
-              const tbl = document.createElement('table');
-              tbl.style.cssText = 'font-size:11px;font-family:monospace;margin-bottom:6px';
-              tbl.innerHTML = rows;
-              popupEl.appendChild(tbl);
-            }
-            // Area and perimeter of the parcel: the number the attributes never carry.
-            const geomSec = geomInfoSection(f);
-            if (geomSec) popupEl.appendChild(geomSec);
-            const selBtn = document.createElement('button');
-            selBtn.style.cssText = 'font-size:11px;padding:3px 10px;cursor:pointer;background:var(--accent);color:#fff;border:none;border-radius:4px;width:100%';
-            selBtn.textContent = _selKeys.has(key) ? '✓ Deselect' : '☆ Select';
-            selBtn.addEventListener('click', e => {
-              e.stopPropagation();
-              _selToggle(key, layer, self.options.style, _labelRaw);
+            /* Built when the balloon opens, not when the features arrive. This runs for every
+               feature of every response — up to maxFeatures, and again on each viewport
+               refresh, which with GPS follow is about once a second — and the geometry section
+               measures geodesics per vertex pair. Paid on load it is the whole batch on the
+               main thread for popups nobody asked for; paid here it is the one that was
+               tapped. The Select button also reads the live selection this way, instead of
+               the state the feature happened to be in when it was fetched. */
+            const buildPopup = () => {
+              const p = f.properties;
+              const popupEl = document.createElement('div');
+              if (p && Object.keys(p).length) {
+                const rows = Object.entries(p).slice(0, 8)
+                  .map(([k,v]) => `<tr><td style="opacity:.65;padding-right:6px">${k}</td><td>${v ?? ''}</td></tr>`)
+                  .join('');
+                const tbl = document.createElement('table');
+                tbl.style.cssText = 'font-size:11px;font-family:monospace;margin-bottom:6px';
+                tbl.innerHTML = rows;
+                popupEl.appendChild(tbl);
+              }
+              // Area and perimeter of the parcel: the number the attributes never carry.
+              const geomSec = geomInfoSection(f);
+              if (geomSec) popupEl.appendChild(geomSec);
+              const selBtn = document.createElement('button');
+              selBtn.style.cssText = 'font-size:11px;padding:3px 10px;cursor:pointer;background:var(--accent);color:#fff;border:none;border-radius:4px;width:100%';
               selBtn.textContent = _selKeys.has(key) ? '✓ Deselect' : '☆ Select';
-            });
-            popupEl.appendChild(selBtn);
-            // Prevent popup interactions from leaking to the map (nav pick mode, selection toggle, scroll-zoom)
-            L.DomEvent.disableClickPropagation(popupEl);
-            L.DomEvent.disableScrollPropagation(popupEl);
+              selBtn.addEventListener('click', e => {
+                e.stopPropagation();
+                _selToggle(key, layer, self.options.style, _labelRaw);
+                selBtn.textContent = _selKeys.has(key) ? '✓ Deselect' : '☆ Select';
+              });
+              popupEl.appendChild(selBtn);
+              // Prevent popup interactions from leaking to the map (nav pick mode, selection toggle, scroll-zoom)
+              L.DomEvent.disableClickPropagation(popupEl);
+              L.DomEvent.disableScrollPropagation(popupEl);
+              return popupEl;
+            };
             // autoPan off: a popup near the edge would nudge the map, and that move
             // triggers the per-viewport WFS refresh which rebuilds features and closes the
             // popup right after it opened. Without the pan it stays until the user moves.
-            layer.bindPopup(popupEl, { maxWidth:500, className:'wfs-popup', autoPan:false });
+            layer.bindPopup(buildPopup, { maxWidth:500, className:'wfs-popup', autoPan:false });
           }
         }).addTo(map);
         // Remove old layer; clear stale screen refs for layers that left the viewport

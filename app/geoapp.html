@@ -680,10 +680,10 @@
 
             <div class="guide-section">
               <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>GPS e tracce</h4>
-              <div class="guide-item"><span class="guide-key">GPS pulsante ↘</span><span class="guide-desc">Centra la mappa sulla tua posizione — tocca il segnaposto per coordinate complete e quota</span></div>
+              <div class="guide-item"><span class="guide-key">GPS pulsante ↘</span><span class="guide-desc">Centra la mappa sulla tua posizione — tocca la tua posizione sulla mappa per le coordinate complete e la quota sul livello del mare</span></div>
               <div class="guide-item"><span class="guide-key">Schermo acceso</span><span class="guide-desc">Con il GPS attivo lo schermo resta acceso da solo</span></div>
               <div class="guide-item"><span class="guide-key">Disegno › GPS</span><span class="guide-desc">Avvia e ferma la registrazione della traccia GPS; alla fine esportala in GPX o KML e, se vuoi, salvala come disegno (comparirà nell’elenco col nome che scegli)</span></div>
-              <div class="guide-item"><span class="guide-key">Barra di stato</span><span class="guide-desc">Mostra LAT, LON, DM, UTM, MGRS, precisione, velocità (km/h), direzione, quota, zoom e CRS — scorri in orizzontale se qualcosa è tagliato</span></div>
+              <div class="guide-item"><span class="guide-key">Barra di stato</span><span class="guide-desc">Mostra LAT, LON, DM, UTM, MGRS, precisione, velocità (km/h), direzione, zoom e CRS — scorri in orizzontale se qualcosa è tagliato. Per la quota del terreno di un punto, tienilo premuto sulla mappa</span></div>
               <div class="guide-item"><span class="guide-key">Profilo altimetrico</span><span class="guide-desc">Dopo aver fermato una traccia con le quote, mostra il grafico quota/distanza</span></div>
             </div>
 
@@ -911,19 +911,15 @@
           <div class="flight-unit">km/h</div>
         </div>
         <div class="flight-block">
-          <div class="flight-label">AGL</div>
-          <div class="flight-val" id="fp-agl">--</div>
-          <div class="flight-unit">m</div>
-        </div>
-        <div class="flight-block">
-          <div class="flight-label">ALT</div>
-          <div class="flight-val" id="fp-alt">--</div>
-          <div class="flight-unit">m WGS84</div>
-        </div>
-        <div class="flight-block">
           <div class="flight-label">HDG</div>
           <div class="flight-val" id="fp-hdg">--</div>
           <div class="flight-unit">deg</div>
+        </div>
+        <!-- Altitude at cruise is five digits: it takes the whole row, not half of it. -->
+        <div class="flight-block flight-wide">
+          <div class="flight-label">ASL</div>
+          <div class="flight-val" id="fp-alt">--</div>
+          <div class="flight-unit">m s.l.m.</div>
         </div>
       </div>
     </div>
@@ -975,7 +971,6 @@
       <div class="s-item" id="sb-acc-item" style="display:none"><span class="s-label">ACC</span><span class="s-val" id="sb-acc">--</span></div>
       <div class="s-item" id="sb-brg-item" style="display:none"><span class="s-label">HDG</span><span class="s-val" id="sb-brg">--</span></div>
       <div class="s-item" id="sb-spd-item" style="display:none"><span class="s-label">SPD</span><span class="s-val" id="sb-spd">--</span></div>
-      <div class="s-item" id="sb-elev-item" style="display:none"><span class="s-label">ELEV</span><span class="s-val" id="sb-elev">--</span></div>
       <div class="s-item"><span class="s-label">ZOOM</span><span class="s-val" id="zoom-level">6</span></div>
       <div class="s-item"><span class="s-label">CRS</span><span class="s-val">WGS84</span></div>
     </div>
@@ -1017,7 +1012,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.3.3</span></div>
+      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.3.7</span></div>
       <div class="about-row"><span class="lbl">Autore</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">Licenza</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — software libero</a></span></div>
       <div class="about-row"><span class="lbl">Tecnologia</span><span class="val">Leaflet · Cordova · Android</span></div>
