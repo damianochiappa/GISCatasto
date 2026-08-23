@@ -1,6 +1,7 @@
 ---
 title: "GISCatasto — app per il catasto italiano: particelle, fogli, mappe offline, KML"
 description: "App Android per consultare la cartografia catastale italiana sul campo: particelle e fogli dai servizi INSPIRE dell'Agenzia delle Entrate, ricerca per comune, foglio e particella, mappe salvabili per l'uso senza connessione, import ed export KML, GPX e GeoJSON."
+image: /social-card.png
 ---
 
 App Android per **consultare la cartografia catastale italiana sul campo**. Le particelle e i fogli
