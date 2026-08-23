@@ -250,10 +250,16 @@ document.getElementById('cred-cancel').addEventListener('click', () => {
 
 /* ===== CONFIG SAVE / LOAD ===== */
 const _CFG_KEY = 'giscatasto_custom_maps';
-// Bundled default overlays (giscatasto-config.json) are re-imported on every launch, so
-// deleting one would otherwise come back next boot. We remember deleted defaults by
-// content signature and skip re-importing them from the bundle. User-added overlays are
-// unaffected (nothing re-adds them anyway).
+const _BUNDLED_CFG = 'giscatasto-config.json';
+// Bundled defaults (giscatasto-config.json) are re-imported on every launch, so deleting
+// one would otherwise come back next boot. We remember deleted defaults by content
+// signature and skip re-importing them from the bundle. User-added entries are unaffected
+// (nothing re-adds them anyway). Applies to overlays AND basemaps: the basemap branch used
+// to ignore the list, so removing a bundled basemap silently undid itself on the next
+// launch — and for an offline one the entry came back with its tile cache already wiped.
+// The list is what makes a deletion permanent, so "Ripristina i predefiniti eliminati"
+// clears it and replays the bundle: without that, removing "Catasto Particelle" also killed
+// the parcel search (cadaster-wizard needs that layer) with no way back short of a reinstall.
 const _REMOVED_KEY = 'giscatasto_removed_defaults';
 function _sigOf(c) { return (c.type || '') + '|' + (c.url || '') + '|' + (c.layers || ''); }
 function _getRemovedDefaults() { try { return JSON.parse(localStorage.getItem(_REMOVED_KEY) || '[]'); } catch(_) { return []; } }
@@ -274,7 +280,7 @@ function _autoSaveConfig() {
 }
 
 function _importConfig(cfg) {
-  if (!cfg || !Array.isArray(cfg.maps)) { toastMsg('File non valido', 'error', undefined, 'sidebar'); return; }
+  if (!cfg || !Array.isArray(cfg.maps)) { toastMsg('File non valido', 'error', undefined, 'sidebar'); return 0; }
   let added = 0;
   let _zAdopted = false;   // a pre-zOrder entry took its stacking from the bundled defaults
   // Only the bundled auto-import honours the removed-defaults list; a saved-config restore
@@ -360,6 +366,8 @@ function _importConfig(cfg) {
       } catch(e) {}
       return;
     }
+    // Basemaps obey the removed-defaults list exactly as overlays do (see _REMOVED_KEY).
+    if (_removed && _removed.indexOf(_sigOf(c)) >= 0) return;
     if (c.protected) { BASEMAPS[c.id] = { _needsCreds: true, _cfg: c }; }
     else { try { BASEMAPS[c.id] = _createLayer(c, null); } catch(e) { return; } }
     customMapConfigs.push(c);
@@ -385,8 +393,10 @@ function _importConfig(cfg) {
   _autoSaveConfig();
   // Adopted values only reach the map once the legend is re-sorted by them.
   if (_zAdopted && typeof _scheduleLegendSort === 'function') _scheduleLegendSort();
-  // Suppress aggregate toast on boot-time restore (caller passes _bootRestore); only show on user-driven import.
-  if (added > 0 && !cfg._bootRestore) toastMsg(added === 1 ? 'Caricata 1 mappa' : 'Caricate ' + added + ' mappe', 'success', undefined, 'sidebar');
+  // Suppress aggregate toast on boot-time restore (caller passes _bootRestore) and when the
+  // caller reports the outcome itself (_quiet); only show on user-driven import.
+  if (added > 0 && !cfg._bootRestore && !cfg._quiet) toastMsg(added === 1 ? 'Caricata 1 mappa' : 'Caricate ' + added + ' mappe', 'success', undefined, 'sidebar');
+  return added;
 }
 
 function _loadSavedConfig() {
@@ -400,6 +410,37 @@ document.getElementById('btn-cfg-save').addEventListener('click', () => {
   const json = JSON.stringify({ v:1, maps: customMapConfigs, sslExceptions: _getSslExceptions() }, null, 2);
   downloadFile(json, 'giscatasto-config.json', 'application/json');
 });
+
+/* Undo of a deletion, for the defaults only. Clearing the removed list and replaying the
+   bundle puts back just what is missing: the import dedups by id and by content, so every
+   default the user still has keeps its colour, opacity, filter, visibility and position in
+   the legend, and layers the user added themselves are never touched. */
+function _restoreBundledDefaults() {
+  showConfirmModal(
+    'Rimettere i layer e le mappe predefiniti che hai eliminato? Quello che hai aggiunto tu ' +
+    'e le impostazioni dei layer che hai ancora non vengono toccati.',
+    () => {
+      try { localStorage.removeItem(_REMOVED_KEY); } catch(_) {}
+      fetch(_BUNDLED_CFG)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (!data || !Array.isArray(data.maps)) {
+            toastMsg('Configurazione predefinita non disponibile', 'error', undefined, 'sidebar'); return;
+          }
+          data._bundled = true;
+          data._quiet = true;             // the count is reported below, in restore wording
+          const n = _importConfig(data);
+          toastMsg(
+            n ? (n === 1 ? 'Ripristinato 1 predefinito' : 'Ripristinati ' + n + ' predefiniti')
+              : 'I predefiniti ci sono già tutti',
+            n ? 'success' : '', undefined, 'sidebar');
+        })
+        .catch(() => toastMsg('Ripristino non riuscito', 'error', undefined, 'sidebar'));
+    },
+    { okLabel: 'Ripristina', danger: false }
+  );
+}
+document.getElementById('btn-cfg-restore').addEventListener('click', _restoreBundledDefaults);
 
 document.getElementById('cfg-file-input').addEventListener('change', function() {
   const file = this.files[0]; if (!file) return;
@@ -439,7 +480,7 @@ document.addEventListener('deviceready', () => {
 }, false);
 
 // Load bundled default maps from giscatasto-config.json (if present in app folder)
-fetch('giscatasto-config.json')
+fetch(_BUNDLED_CFG)
   .then(r => r.ok ? r.json() : null)
   .then(data => { if (data && data.maps && data.maps.length) { data._bundled = true; _importConfig(data); } })
   .catch(() => {});

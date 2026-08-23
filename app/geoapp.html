@@ -360,6 +360,10 @@
               Importa configurazione
               <input type="file" id="cfg-file-input" accept=".json" style="display:none">
             </label>
+            <button class="btn btn-secondary btn-full" id="btn-cfg-restore" style="padding:6px 10px" title="Rimette i layer e le mappe di serie che hai eliminato. Non tocca quello che hai aggiunto tu">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><polyline points="3 3 3 8 8 8"/></svg>
+              Ripristina i predefiniti eliminati
+            </button>
           </div>
         </div>
 
@@ -664,7 +668,7 @@
               <div class="guide-item"><span class="guide-key">Elenco dei layer</span><span class="guide-desc">Accendi e spegni, regola l’opacità, riordina trascinando la maniglia ⋮ a sinistra della riga, esporta o elimina. Doppio tocco sul nome per rinominarlo. L’ordine dell’elenco è l’ordine di sovrapposizione, senza vincoli: qualsiasi layer può stare sopra o sotto qualsiasi altro, anche un WMS raster sopra un file importato o sopra il catasto. L’ordine che imposti viene ricordato fra un avvio e l’altro. I layer nuovi entrano sotto quelli che coprirebbero — un raster sotto i vettori, una linea sopra le altre linee — e da lì li sposti. I pulsanti che non hanno senso restano nascosti: gli overlay WMS raster non hanno lo zoom all’estensione (non ne hanno una vettoriale) e i layer senza file di origine (WMS/WFS) non hanno l’esportazione.</span></div>
               <div class="guide-item"><span class="guide-key">Vuoto (bucato) ∅</span><span class="guide-desc">Tocca il pulsante ∅ su un layer da file per lasciarne solo il bordo, con il riempimento trasparente. Tocca di nuovo per tornare indietro. Vale per i poligoni di KML, GeoJSON e GPX. Lo stato viene salvato e ripristinato al lancio successivo.</span></div>
               <div class="guide-item"><span class="guide-key">Modifica KML ✏</span><span class="guide-desc">Tocca la matita su un layer KML per modificarne i vertici: trascinali per spostarli, doppio tocco per eliminarne uno, trascina un punto intermedio tratteggiato per aggiungerne uno nuovo. Salva riporta le modifiche nel layer e aggiorna il KML in memoria. Annulla le scarta tutte.</span></div>
-              <div class="guide-item"><span class="guide-key">Configurazione mappe</span><span class="guide-desc">“Esporta configurazione” scrive un JSON con i servizi web che hai aggiunto — WMS, WFS, WMTS/XYZ, ArcGIS — conservando nome del layer, CRS, filtro, colore, opacità, visibilità e ordine di sovrapposizione, più le eventuali eccezioni SSL. L’importazione li ripristina su un altro dispositivo o dopo una reinstallazione. <b>Cosa non contiene:</b> i file che hai importato (KML, KMZ, GeoJSON, GPX), i tuoi disegni, i segnalibri e i tile in cache. Quelli stanno da un’altra parte sul dispositivo e viaggiano come file: esporta un layer da file dal suo elenco, e i disegni da Disegno &rarr; “Esporta tutto”. Le basemap offline scaricate compaiono nel JSON, ma solo come voce: i tile non ci sono, quindi su un altro dispositivo l’area va riscaricata.</span></div>
+              <div class="guide-item"><span class="guide-key">Configurazione mappe</span><span class="guide-desc">“Esporta configurazione” scrive un JSON con i servizi web che hai aggiunto — WMS, WFS, WMTS/XYZ, ArcGIS — conservando nome del layer, CRS, filtro, colore, opacità, visibilità e ordine di sovrapposizione, più le eventuali eccezioni SSL. L’importazione li ripristina su un altro dispositivo o dopo una reinstallazione. <b>Cosa non contiene:</b> i file che hai importato (KML, KMZ, GeoJSON, GPX), i tuoi disegni, i segnalibri e i tile in cache. Quelli stanno da un’altra parte sul dispositivo e viaggiano come file: esporta un layer da file dal suo elenco, e i disegni da Disegno &rarr; “Esporta tutto”. Le basemap offline scaricate compaiono nel JSON, ma solo come voce: i tile non ci sono, quindi su un altro dispositivo l’area va riscaricata. “Ripristina i predefiniti eliminati” rimette i layer e le mappe di serie che hai eliminato — utile se hai tolto per sbaglio un layer catastale, perché la ricerca per foglio e particella ha bisogno del layer Catasto Particelle per funzionare. Non tocca quello che hai aggiunto tu, e i predefiniti che hai ancora restano com’erano: colore, opacità, filtro e posizione nell’elenco.</span></div>
             </div>
 
             <div class="guide-section">
@@ -1012,7 +1016,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.3.7</span></div>
+      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.3.8</span></div>
       <div class="about-row"><span class="lbl">Autore</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">Licenza</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — software libero</a></span></div>
       <div class="about-row"><span class="lbl">Tecnologia</span><span class="val">Leaflet · Cordova · Android</span></div>

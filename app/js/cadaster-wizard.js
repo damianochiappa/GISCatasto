@@ -639,6 +639,9 @@
       if (typeof onDone === 'function') onDone();
     }; })();
     if (!parcelLayer) {
+      // Naming the way back matters here: the layer is missing because it was deleted, and
+      // until now nothing in the app told the user it could be brought back.
+      setStatus('Manca il layer Catasto Particelle: rimettilo da Configurazione mappe \u203A Ripristina i predefiniti eliminati', true);
       if (typeof toastMsg === 'function') toastMsg('Il layer Catasto Particelle non è configurato', 'error', undefined, 'sidebar');
       _done(); return;
     }

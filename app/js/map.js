@@ -2409,6 +2409,11 @@ function _addBasemapUI(cfg) {
     delete BASEMAPS[id];
     const idx = customMapConfigs.findIndex(c => c.id === id);
     if (idx !== -1) customMapConfigs.splice(idx, 1);
+    // Remember the deletion the way an overlay does, otherwise a bundled basemap is
+    // re-imported at the next launch and the removal quietly undoes itself — with the
+    // downloaded tiles of an offline map already gone. Reversible from
+    // Configurazione mappe › Ripristina i predefiniti eliminati.
+    if (cfgEntry && typeof _addRemovedDefault === 'function') _addRemovedDefault(_sigOf(cfgEntry));
     _autoSaveConfig();
     label.remove();
     // Free the dedicated offline cache and tell the SW its offline list changed.
