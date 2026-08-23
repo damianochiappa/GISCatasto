@@ -18,13 +18,16 @@ disponibili senza connessione**.
 
 ## Dove si scarica
 
-Su **Google Play**:
+L'app è in prova chiusa sul Play Store: la scheda pubblica non è ancora disponibile.
 
-<!-- Badge fornito da Google: le regole del marchio impongono di usarlo cosi' com'e', senza
-     modificarlo ne' ritagliarlo. -->
+<!-- Da riattivare quando la scheda del Play sara' pubblica, insieme alla riga in README.md.
+     Verifica prima che l'URL non risponda 404.
+     Badge fornito da Google: le regole del marchio impongono di usarlo cosi' com'e', senza
+     modificarlo ne' ritagliarlo.
 [![Disponibile su Google Play](https://play.google.com/intl/en_us/badges/static/images/badges/it_badge_web_generic.png)](https://play.google.com/store/apps/details?id=com.geotool.giscatasto)
 
 [play.google.com/store/apps/details?id=com.geotool.giscatasto](https://play.google.com/store/apps/details?id=com.geotool.giscatasto)
+-->
 
 Il codice sorgente è pubblico, come richiede la licenza:
 **[github.com/damianochiappa/GISCatasto](https://github.com/damianochiappa/GISCatasto)**
