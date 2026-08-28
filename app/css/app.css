@@ -34,6 +34,10 @@
   /* Height of the Select badge lane. Anything that would otherwise share --lane-bottom with
      the badge steps up by this much instead of overlapping it. */
   --badge-lane: 48px;
+  /* Same idea for the two bottom-left readout panels, which are far taller than a badge:
+     the nav HUD measures 101 px on the bench at 412×915 and the flight panel is within a
+     few pixels of it, so 112 px clears either one with a small gap left over. */
+  --hud-lane: 112px;
   /* System bar insets, routed through variables instead of env() at each use site.
      The meta viewport carries viewport-fit=cover, so env() reports the bars on every
      Android — but below Android 15 the window is NOT edge-to-edge: the system has
@@ -671,6 +675,17 @@ html, body {
 body:has(#sel-badge:not(.hidden)) #toast,
 body:has(#nav-follow-badge:not(.hidden)) #toast { bottom: calc(var(--lane-bottom) + var(--badge-lane)); }
 body:has(#kml-edit-bar:not(.hidden)) #toast     { bottom: calc(var(--lane-bottom) + var(--badge-lane) * 2); }
+/* The nav HUD and the flight panel are not centre badges — they are taller and they sit in
+   the same bottom lane on the left — but a toast lands on them all the same: the pill is
+   z-index 9999 over their 800 and, with white-space:nowrap on a phone, wide enough to reach
+   across. Measured on the bench at 412×915: HUD x 10-242 y 639-740, toast x 92-408 y 657-692
+   — the message sat inside the panel, over the distance and ETA readings. A warn or error
+   toast is a translucent coloured pill with a blur and a two-shot glow animation, so read
+   off the panel underneath it is the panel changing colour and turning to frosted glass.
+   Last of the lane rules on purpose: both panels are taller than any badge, so when one is
+   up its clearance is the one that has to win. */
+body:has(#nav-hud:not(.hidden)) #toast,
+body:has(#flight-panel:not(.hidden)) #toast     { bottom: calc(var(--lane-bottom) + var(--hud-lane)); }
 
 /* Boost popup/tooltip pane z-index — leaflet-rotate per-pane transforms create stacking
    contexts that ignore z-index between siblings; DOM order + high z-index as double safety */

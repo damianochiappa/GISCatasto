@@ -280,15 +280,33 @@ function _autoSaveConfig() {
 }
 
 function _importConfig(cfg) {
-  if (!cfg || !Array.isArray(cfg.maps)) { toastMsg('File non valido', 'error', undefined, 'sidebar'); return 0; }
+  if (!cfg || !Array.isArray(cfg.maps)) { toastMsg('File non valido', 'error', undefined, 'sidebar'); return { added: 0, failed: [] }; }
   let added = 0;
+  /* Names of entries that could not be built. They used to be swallowed by an empty catch:
+     the layer vanished from the legend with no trace, and the count below reported a smaller
+     number as if nothing had gone wrong — a restore could even answer "they are all there"
+     while the one layer the user came for had just failed. */
+  const failed = [];
   let _zAdopted = false;   // a pre-zOrder entry took its stacking from the bundled defaults
   // Only the bundled auto-import honours the removed-defaults list; a saved-config restore
   // or a user file import must not be filtered by it.
   const _removed = cfg._bundled ? _getRemovedDefaults() : null;
+  /* A file the user picked is the only import that can carry an offline entry from
+     ANOTHER device, where the tiles stayed behind. The boot restore and the bundled
+     import describe caches that are local and real, so neither may be filtered — doing
+     so would drop the user's offline basemaps on every launch. */
+  const _fromFile = !cfg._bootRestore && !cfg._bundled;
   cfg.maps.forEach(c => {
     if (!c.id || !c.type || !c.url) return;
     if (BASEMAPS[c.id]) return;
+    /* Offline entries are not exported any more (see btn-cfg-save) and are skipped here
+       as well, because configs written before that change are already in circulation.
+       Such an entry is an extra config that offline.js created next to the map it was
+       downloaded FROM, pointing at the same tile URL; that source map travels in this
+       same file. Restoring it would add a duplicate named "Offline: …" with no tiles
+       behind it — which the cache-full check then reports as an old-format map and
+       offers to delete. Re-downloading the area from the source is the whole recovery. */
+    if (c.offline && _fromFile) return;
     const n = parseInt(c.id.replace('custom_ws_',''));
     if (!isNaN(n)) wsCounter = Math.max(wsCounter, n);
     // Overlay layers: restore directly to map via addLayerToList
@@ -363,13 +381,23 @@ function _importConfig(cfg) {
         }
         customMapConfigs.push(c);
         added++;
-      } catch(e) {}
+      } catch(e) {
+        failed.push(c.name || c.id);
+        if (window.console) console.warn('overlay import failed', c.id, e);
+      }
       return;
     }
     // Basemaps obey the removed-defaults list exactly as overlays do (see _REMOVED_KEY).
     if (_removed && _removed.indexOf(_sigOf(c)) >= 0) return;
     if (c.protected) { BASEMAPS[c.id] = { _needsCreds: true, _cfg: c }; }
-    else { try { BASEMAPS[c.id] = _createLayer(c, null); } catch(e) { return; } }
+    else {
+      try { BASEMAPS[c.id] = _createLayer(c, null); }
+      catch(e) {
+        failed.push(c.name || c.id);
+        if (window.console) console.warn('basemap import failed', c.id, e);
+        return;
+      }
+    }
     customMapConfigs.push(c);
     _addBasemapUI(c);
     added++;
@@ -393,10 +421,18 @@ function _importConfig(cfg) {
   _autoSaveConfig();
   // Adopted values only reach the map once the legend is re-sorted by them.
   if (_zAdopted && typeof _scheduleLegendSort === 'function') _scheduleLegendSort();
+  /* Reported on every path, boot included: a layer missing from the legend is the symptom the
+     user actually sees, and leaving it unexplained is what made this class of failure look
+     like the app losing their configuration on its own. */
+  if (failed.length) {
+    toastMsg(failed.length === 1 ? 'Layer non caricato: ' + failed[0]
+                                 : failed.length + ' layer non caricati: ' + failed.join(', '),
+             'error', undefined, 'sidebar');
+  }
   // Suppress aggregate toast on boot-time restore (caller passes _bootRestore) and when the
   // caller reports the outcome itself (_quiet); only show on user-driven import.
   if (added > 0 && !cfg._bootRestore && !cfg._quiet) toastMsg(added === 1 ? 'Caricata 1 mappa' : 'Caricate ' + added + ' mappe', 'success', undefined, 'sidebar');
-  return added;
+  return { added, failed };
 }
 
 function _loadSavedConfig() {
@@ -407,7 +443,17 @@ function _loadSavedConfig() {
 }
 
 document.getElementById('btn-cfg-save').addEventListener('click', () => {
-  const json = JSON.stringify({ v:1, maps: customMapConfigs, sslExceptions: _getSslExceptions() }, null, 2);
+  /* Offline basemaps stay out of the export on purpose. Downloading an area does not mark
+     the map it came from: offline.js adds a SEPARATE entry beside it, holding the same tile
+     URL plus the tile count. The tiles cannot travel in a JSON, so on another device that
+     entry restores as a tile-less duplicate of a map this very file already carries — and
+     the cache-full check reads a saved map with no cache of its own as the old storage
+     format, so it offers to remove it. Exporting the source alone says the truth: re-download
+     the area there. NOTE: this filter belongs here and NOT in _autoSaveConfig, which persists
+     the live state to localStorage — filtering that one would erase the user's offline
+     basemaps at the next launch. */
+  const maps = customMapConfigs.filter(c => !c.offline);
+  const json = JSON.stringify({ v:1, maps, sslExceptions: _getSslExceptions() }, null, 2);
   downloadFile(json, 'giscatasto-config.json', 'application/json');
 });
 
@@ -429,11 +475,15 @@ function _restoreBundledDefaults() {
           }
           data._bundled = true;
           data._quiet = true;             // the count is reported below, in restore wording
-          const n = _importConfig(data);
-          toastMsg(
-            n ? (n === 1 ? 'Ripristinato 1 predefinito' : 'Ripristinati ' + n + ' predefiniti')
-              : 'I predefiniti ci sono già tutti',
-            n ? 'success' : '', undefined, 'sidebar');
+          const r = _importConfig(data);
+          // When something failed to build, _importConfig has already named it: adding
+          // "they are all there" on top of that would contradict the error just shown.
+          if (r.added) {
+            toastMsg(r.added === 1 ? 'Ripristinato 1 predefinito' : 'Ripristinati ' + r.added + ' predefiniti',
+                     'success', undefined, 'sidebar');
+          } else if (!r.failed.length) {
+            toastMsg('I predefiniti ci sono già tutti', '', undefined, 'sidebar');
+          }
         })
         .catch(() => toastMsg('Ripristino non riuscito', 'error', undefined, 'sidebar'));
     },
@@ -479,24 +529,47 @@ document.addEventListener('deviceready', () => {
   );
 }, false);
 
-// Load bundled default maps from giscatasto-config.json (if present in app folder)
-fetch(_BUNDLED_CFG)
-  .then(r => r.ok ? r.json() : null)
-  .then(data => { if (data && data.maps && data.maps.length) { data._bundled = true; _importConfig(data); } })
-  .catch(() => {});
-
-// Ripristina la basemap salvata (dopo che le mappe custom sono state caricate)
-(function() {
+/* Restore the basemap the user was last on.
+   This has to run AFTER the bundled config below has been imported. It used to be an IIFE
+   right here, executed while this file was still being parsed — but the bundled maps arrive
+   through an async fetch, so at that moment BASEMAPS held only the built-ins and whatever
+   _loadSavedConfig() had restored synchronously. A saved basemap coming from the bundle was
+   therefore never found, `if (!entry) return` swallowed it, and the app came back on its
+   default at every single launch. Maps the user had added themselves did survive, which is
+   what made the loss look arbitrary rather than systematic. */
+function _restoreSavedBasemap() {
   try {
     const savedId = localStorage.getItem('giscatasto_basemap');
-    if (!savedId || savedId === 'osm') return;
+    /* Compared against the id that is actually current, not a hardcoded one. The literal
+       here was 'osm', left behind when the default became 'osm_std': it skipped the restore
+       for OpenTopoMap — a perfectly ordinary choice, whose id IS 'osm' — and never skipped
+       the real default. Restoring the current basemap is a no-op, so this is only an
+       early-out, never a rule about which map may be restored. */
+    if (!savedId || savedId === currentBasemapId) return;
     const entry = BASEMAPS[savedId];
     if (!entry || entry._needsCreds) return; // non ripristinare mappe protette (richiedono login)
     switchBasemap(savedId);
     const radio = document.querySelector(`input[name="basemap"][value="${savedId}"]`);
     if (radio) radio.checked = true;
   } catch(_) {}
-})();
+}
+
+/* Called twice on purpose, and idempotent because of the early-out above: once now, once
+   after the bundled config has landed. The first call already covers everything that exists
+   at this point — the built-ins and the maps the user added — so those come back with no
+   visible detour through the default. Only a basemap that lives in the bundle has to wait
+   for the fetch, because before it there is nothing to restore; when the first call succeeds
+   it has set currentBasemapId, and the second one returns immediately. */
+_restoreSavedBasemap();
+
+// Load bundled default maps from giscatasto-config.json (if present in app folder)
+// The basemap restore is chained after BOTH outcomes: a missing or malformed bundled config
+// must not also cost the user the basemap they had picked from the built-in list.
+fetch(_BUNDLED_CFG)
+  .then(r => r.ok ? r.json() : null)
+  .then(data => { if (data && data.maps && data.maps.length) { data._bundled = true; _importConfig(data); } })
+  .catch(() => {})
+  .then(_restoreSavedBasemap);
 
 /* ===== BOOKMARKS ===== */
 const _BM_KEY = 'giscatasto_bookmarks';

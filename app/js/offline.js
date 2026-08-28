@@ -522,9 +522,13 @@
      guarded so a partial app state can't throw here. */
   function _purgeOfflineEntry(id) {
     try {
+      // Fall back to the app's own default. This said 'osm' — OpenTopoMap — which is not the
+      // default here and has not been since it became 'osm_std': removing the active offline
+      // map quietly moved the user to a different map than the one the rest of the code
+      // treats as home (map.js does use 'osm_std' on the same fallback).
       if (typeof currentBasemapId !== 'undefined' && currentBasemapId === id && typeof switchBasemap === 'function') {
-        switchBasemap('osm');
-        const osmRadio = document.querySelector('#basemap-list input[name="basemap"][value="osm"]');
+        switchBasemap('osm_std');
+        const osmRadio = document.querySelector('#basemap-list input[name="basemap"][value="osm_std"]');
         if (osmRadio) osmRadio.checked = true;
       }
     } catch (_) {}

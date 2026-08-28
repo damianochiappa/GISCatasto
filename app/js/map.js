@@ -374,6 +374,17 @@ const _MOVE_OFF_MS = 0.5;   // m/s — below this: stopped (state held in betwee
 const _MOVE_DIST_M = 6;     // m  — displacement counting as real movement when speed is null
 const _STOP_MS     = 4000;  // ms — no real progress this long (null speed) → stopped
 
+/* The same jitter, asked about in the other unit. The thresholds above answer "is the rider
+   moving", in metres per second, and they gate the rotation. This one answers "would the
+   screen visibly change", which is a question about pixels: below it a re-centre moves the
+   map by less than the width of a fingernail, and pays for it with a moveend — the event
+   every raster and vector overlay refreshes on. Measured on the bench: at a standstill,
+   12 fixes of ±4 m jitter issued 12 pans, 11 moveends and 11 refresh requests per overlay.
+   24 px is about 21 m at zoom 17 at Italian latitudes, comfortably above a standstill
+   jitter, and out of the ~450 px between the centre and the edge of a phone screen it
+   leaves the marker within 5% of centre. Pixels, not metres, so it holds at every zoom. */
+const _FOLLOW_MIN_PX = 24;
+
 function _makeNavArrowIcon(heading) {
   const rot = (heading != null && isFinite(heading)) ? heading : 0;
   return L.divIcon({
@@ -535,7 +546,19 @@ function gpsUpdate(pos) {
 
 
   if (!gpsFirstFix) { gpsFirstFix = true; map.setView(ll, Math.max(map.getZoom(), 15)); }
-  else if (typeof navIsActive === 'function' && navIsActive() && window._navFollowing) { map.panTo(ll, { animate: true, duration: 0.3 }); }
+  else if (typeof navIsActive === 'function' && navIsActive() && window._navFollowing) {
+    /* Follow the rider, not the receiver's noise. The bearing has been gated on real
+       movement since the jitter fix below; the pan never was, so a receiver wandering a
+       few metres at a standstill re-centred the map on every fix — and each of those
+       re-centres fires moveend, which is what _WMSImageLayer and _WFSLayer refresh on.
+       The deviation is taken against the map CENTRE, not against the previous fix, so it
+       accumulates: a rider too slow to trip _MOVE_ON_MS still gets re-centred once the
+       marker has crept _FOLLOW_MIN_PX off centre, which a gate on _isMoving alone would
+       not have done — it would have stopped following them. */
+    const _off = map.latLngToContainerPoint(ll)
+                    .distanceTo(map.latLngToContainerPoint(map.getCenter()));
+    if (_off >= _FOLLOW_MIN_PX) map.panTo(ll, { animate: true, duration: 0.3 });
+  }
 
   // Update GPS accuracy in statusbar
   const accItem = document.getElementById('sb-acc-item');
@@ -1047,6 +1070,14 @@ function _wmsErrorText(data) {
   } catch(_) { return 'risposta del servizio illeggibile'; }
 }
 
+/* Ceiling on a single GetMap, in pixels per side. Only a rotated request can reach it: at
+   bearing 0 the image is the screen. */
+const _WMS_MAX_PX = 2048;
+/* How long a frame that has been asked for may stay pending before it is given up on. It
+   used to be the deadline for dropping the frame ALREADY on screen, which is the opposite
+   trade — see the swap in _update. */
+const _WMS_FRAME_MS = 12000;
+
 const _WMSImageLayer = L.Layer.extend({
   options: { layers:'', version:'1.1.1', crs:null, format:'image/png',
              transparent:true, opacity:0.8, attribution:'', minZoom:null },
@@ -1081,12 +1112,15 @@ const _WMSImageLayer = L.Layer.extend({
     }
     _reorderMapPanes(map);
     map.on('moveend zoomend resize', this._schedule, this);
+    map.on('rotate', this._onRotate, this);
     this._schedule();
   },
 
   onRemove(map) {
     clearTimeout(this._timer);
     map.off('moveend zoomend resize', this._schedule, this);
+    map.off('rotate', this._onRotate, this);
+    this._fetchedBounds = null;
     this._removeOverlay();
   },
 
@@ -1107,6 +1141,72 @@ const _WMSImageLayer = L.Layer.extend({
   _schedule() {
     clearTimeout(this._timer);
     this._timer = setTimeout(() => this._update(), 300);
+  },
+
+  /* The area to ask the image for. Asking for the viewport envelope ties the request to the
+     bearing it was made at, and the envelope is TIGHT: measured on the bench, one degree of
+     turn is enough for the corners of the screen to leave it. That cannot be answered by
+     re-fetching on every rotation — a GPS course wobbles a degree or two at cycling speed
+     and the fetch would be back to once a second, which is the whole defect. So a rotated
+     map asks for the square that circumscribes the viewport instead: it covers the screen at
+     EVERY bearing, so once one image has been fetched no amount of turning asks for another.
+     It costs 2.67× the pixels of a screen-sized request (1003² against 412×915 on the test
+     phone) but is asked for only when the view really moves, which is far less often than
+     the once-per-fix it replaces. A north-up map asks for the screen exactly as before, so
+     the ordinary browsing case pays nothing for this. */
+  _requestBounds() {
+    const map = this._map;
+    if (typeof map.getBearing !== 'function' || !map.getBearing()) return map.getBounds();
+    const size = map.getSize();
+    const r    = Math.ceil(Math.sqrt(size.x * size.x + size.y * size.y) / 2);
+    const z    = map.getZoom();
+    const c    = map.project(map.getCenter(), z);
+    return L.latLngBounds(map.unproject(c.add(L.point(-r,  r)), z),
+                          map.unproject(c.add(L.point( r, -r)), z));
+  },
+
+  /* Rotation fires no moveend, so nothing else would notice that the screen has left the
+     image. In practice this fires once — on the first degree of the first turn, when the
+     north-up request above is still the one on screen — and the image it asks for is the
+     bearing-independent square, which no later turn can uncover. It closes the same gap for
+     the two-finger rotate gesture, which never fired moveend either. */
+  _onRotate() {
+    const b = this._fetchedBounds;
+    if (!b || !this._map) return;
+    const map = this._map, s = map.getSize();
+    const covered = [[0, 0], [s.x, 0], [s.x, s.y], [0, s.y]]
+      .every(p => b.contains(map.containerPointToLatLng(p)));
+    if (!covered) this._schedule();
+  },
+
+  /* The pixel size to ask the image at. On a north-up map this is the screen and the request
+     is byte-for-byte the one that has always been sent. Under track-up navigation it is not:
+     leaflet-rotate's getBounds() returns the envelope of the four ROTATED corners, which is
+     larger than the screen, and asking for that area at screen size stretches the image and
+     — the part that shows — changes metres per pixel with the bearing. A WMS reads its
+     per-layer scale window off exactly that ratio, so the same view at the same zoom crossed
+     scale windows as the map turned: measured on the bench at 412×915, 0.861 m/px at 0°,
+     1.461 at 30°, 1.620 at 45°, nearly a full zoom level lost. On the Agenzia Entrate
+     cadastre out of window is not an error but an empty PNG with HTTP 200 (particelle draw
+     from z17), so the layer blanked and came back as the bearing turned. Sizing the request
+     to the envelope keeps one image pixel on one screen pixel at every bearing. The cap
+     bounds what a rotated request on a large screen can ask for; the floor keeps it from
+     ever asking for less than it does today. */
+  _imageSize(bounds) {
+    const map = this._map;
+    const screen = map.getSize();
+    if (typeof map.getBearing !== 'function' || !map.getBearing()) return screen;
+    const z  = map.getZoom();
+    const nw = map.project(bounds.getNorthWest(), z);
+    const se = map.project(bounds.getSouthEast(), z);
+    let w = Math.max(screen.x, Math.round(Math.abs(se.x - nw.x)));
+    let h = Math.max(screen.y, Math.round(Math.abs(se.y - nw.y)));
+    /* Over the ceiling both sides come down by the same factor, so the image keeps one scale
+       on both axes — capping them independently would ask for a different number of metres
+       per pixel across than down, which is the defect this method exists to remove. */
+    const over = Math.max(w, h) / _WMS_MAX_PX;
+    if (over > 1) { w = Math.round(w / over); h = Math.round(h / over); }
+    return L.point(w, h);
   },
 
   _buildUrl(bounds, size) {
@@ -1143,9 +1243,11 @@ const _WMSImageLayer = L.Layer.extend({
   _update() {
     const map = this._map;
     if (!map) return;
-    const bounds = map.getBounds();
-    const size   = map.getSize();
-    if (!size.x || !size.y) return;
+    /* The screen size is the "is the map laid out yet" guard; the requested size is the one
+       that keeps the scale bearing-independent (see _imageSize). */
+    if (!map.getSize().x || !map.getSize().y) return;
+    const bounds = this._requestBounds();
+    const size   = this._imageSize(bounds);
     // Below the layer's scale window there is nothing to draw — the server would answer with an
     // empty image. Skip the request (and drop any stale frame) and nudge the user to zoom in,
     // mirroring the WFS minZoom behaviour. Only set for overlays, so a basemap is never blanked.
@@ -1161,6 +1263,10 @@ const _WMSImageLayer = L.Layer.extend({
       return;
     }
     const reqId = ++this._reqId;
+    /* What the image about to be asked for will cover — the reference _onRotate checks the
+       screen against. Recorded when the request is issued, not when it lands, so a turn
+       during a slow fetch does not queue a second one for the same view. */
+    this._fetchedBounds = bounds;
     const url   = this._buildUrl(bounds, size);
     const _show = imgUrl => {
       // A response that lost the race must still release its object URL, otherwise the
@@ -1177,16 +1283,31 @@ const _WMSImageLayer = L.Layer.extend({
          like double buffering but was not: the browser had nothing to show in between,
          which is the flicker seen on every pan and zoom. Handlers are attached before
          addTo because an object URL can finish loading immediately. */
-      let swapped = false;
+      let settled = false;
       const _dropPrev = () => {
-        if (swapped) return;
-        swapped = true;
+        if (settled) return;
+        settled = true;
         if (prev) try { map.removeLayer(prev); } catch(_) {}
         _revokeObj(prevUrl);
       };
+      /* The other half of the same rule, and the half that was missing: a frame that never
+         arrives must take ITSELF off, not the one on screen. Dropping the previous frame on
+         a timer read as "never hold two frames at once", but on a slow link it is what
+         blanked the layer — the old image left before the new one had come. An error is the
+         same case: replacing a good frame with a broken one is a blank. Either way the
+         pending frame goes and the visible one stays, so there is still never more than one
+         frame on the map. Guarded on identity because a newer request may already have
+         superseded this one, in which case this frame is nobody's current overlay. */
+      const _dropNext = () => {
+        if (settled) return;
+        settled = true;
+        try { map.removeLayer(next); } catch(_) {}
+        _revokeObj(imgUrl);
+        if (this._overlay === next) { this._overlay = prev; this._overlayUrl = prevUrl; }
+      };
       next.on('load',  _dropPrev);
-      next.on('error', _dropPrev);      // a broken frame must not strand the old one
-      setTimeout(_dropPrev, 3000);      // safety net: never hold two frames indefinitely
+      next.on('error', _dropNext);
+      setTimeout(_dropNext, _WMS_FRAME_MS);
       next.addTo(map);
       this._overlay    = next;
       this._overlayUrl = imgUrl;
@@ -1204,30 +1325,59 @@ const _WMSImageLayer = L.Layer.extend({
     };
 
     if (window.cordova && cordova.plugin && cordova.plugin.http) {
-      cordova.plugin.http.sendRequest(url, { method:'get', responseType:'arraybuffer' },
-        res => {
-          if (reqId !== this._reqId) return;
-          const hdrs = res.headers || {};
-          const ct = hdrs['content-type'] || hdrs['Content-Type'] || '';
-          // A non-image body (HTML error page or OGC ServiceException) means the server
-          // rejected the request — show its message rather than a blank. An empty header
-          // is treated as an image (some servers omit it), so a valid tile is never blocked.
-          if (ct && !/image\//i.test(ct)) { _notifyErr(_wmsErrorText(res.data)); return; }
-          // The content-type check above misses two real cases: servers that omit the
-          // header, and servers that label a ServiceException as image/png. Sniff the
-          // magic bytes so an XML error is named in the console instead of being drawn
-          // as a broken image. Diagnostic only — the response is still shown as before.
-          _warnIfNotImage(res.data, url);
-          try {
-            // Blob instead of a base64 data URL: no main-thread string building, no 33%
-            // size inflation. See the same change in the OpenLayers imageLoadFunction.
-            _show(URL.createObjectURL(new Blob([res.data], { type:'image/png' })));
-          } catch(e) {
-            console.warn('[giscatasto] WMS image could not be displayed:', e.name, url);
+      /* Sent through a wrapper so a single failure can be retried once, and ONLY for
+         status -2. In this plugin -2 is exactly an SSLException (CordovaHttpBase.java);
+         every other transport failure keeps the old behaviour of reporting immediately.
+         The -2 seen here is an ordering problem at startup: TLS trust is handed back to
+         the platform with setServerTrustMode('legacy'), which the plugin queues on the
+         SAME cordova thread pool as this request, so the first GetMap of a session can
+         still be validated against the plugin's default trust managers — the ones built
+         from AndroidCAStore, which do not read network_security_config.xml and therefore
+         miss the extra anchor the Agenzia Entrate chain needs. Once the swap lands the
+         identical URL succeeds. Without the retry the overlay stays blank until something
+         fires moveend/zoomend/resize, because nothing else calls _update: on a launch that
+         restores the saved view the cadastral layers sit empty, error toasts and all, until
+         the user happens to pan. Worst case when TLS is genuinely broken: one extra
+         request, once — the second failure is reported exactly as before. */
+      const _send = isRetry => {
+        cordova.plugin.http.sendRequest(url, { method:'get', responseType:'arraybuffer' },
+          res => {
+            if (reqId !== this._reqId) return;
+            const hdrs = res.headers || {};
+            const ct = hdrs['content-type'] || hdrs['Content-Type'] || '';
+            // A non-image body (HTML error page or OGC ServiceException) means the server
+            // rejected the request — show its message rather than a blank. An empty header
+            // is treated as an image (some servers omit it), so a valid tile is never blocked.
+            if (ct && !/image\//i.test(ct)) { _notifyErr(_wmsErrorText(res.data)); return; }
+            // The content-type check above misses two real cases: servers that omit the
+            // header, and servers that label a ServiceException as image/png. Sniff the
+            // magic bytes so an XML error is named in the console instead of being drawn
+            // as a broken image. Diagnostic only — the response is still shown as before.
+            _warnIfNotImage(res.data, url);
+            try {
+              // Blob instead of a base64 data URL: no main-thread string building, no 33%
+              // size inflation. See the same change in the OpenLayers imageLoadFunction.
+              _show(URL.createObjectURL(new Blob([res.data], { type:'image/png' })));
+            } catch(e) {
+              console.warn('[giscatasto] WMS image could not be displayed:', e.name, url);
+            }
+          },
+          err => {
+            /* The retry is dropped unless this request is still the current one AND the
+               layer is still on the map: hasLayer is checked because onRemove does not
+               invalidate _reqId, so without it a layer switched off during the delay could
+               still paint a frame. */
+            if (!isRetry && err && err.status === -2) {
+              setTimeout(() => {
+                if (reqId === this._reqId && this._map && this._map.hasLayer(this)) _send(true);
+              }, 800);
+              return;
+            }
+            _notifyErr('richiesta non riuscita' + (err && err.status ? ' (HTTP ' + err.status + ')' : ''));
           }
-        },
-        err => { _notifyErr('richiesta non riuscita' + (err && err.status ? ' (HTTP ' + err.status + ')' : '')); }
-      );
+        );
+      };
+      _send(false);
     } else {
       // Browser path (no cordova-plugin-http): the image is handed straight to
       // the overlay, so a failed load has no response body to inspect. Report it

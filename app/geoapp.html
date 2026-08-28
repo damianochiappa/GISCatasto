@@ -668,7 +668,7 @@
               <div class="guide-item"><span class="guide-key">Elenco dei layer</span><span class="guide-desc">Accendi e spegni, regola l’opacità, riordina trascinando la maniglia ⋮ a sinistra della riga, esporta o elimina. Doppio tocco sul nome per rinominarlo. L’ordine dell’elenco è l’ordine di sovrapposizione, senza vincoli: qualsiasi layer può stare sopra o sotto qualsiasi altro, anche un WMS raster sopra un file importato o sopra il catasto. L’ordine che imposti viene ricordato fra un avvio e l’altro. I layer nuovi entrano sotto quelli che coprirebbero — un raster sotto i vettori, una linea sopra le altre linee — e da lì li sposti. I pulsanti che non hanno senso restano nascosti: gli overlay WMS raster non hanno lo zoom all’estensione (non ne hanno una vettoriale) e i layer senza file di origine (WMS/WFS) non hanno l’esportazione.</span></div>
               <div class="guide-item"><span class="guide-key">Vuoto (bucato) ∅</span><span class="guide-desc">Tocca il pulsante ∅ su un layer da file per lasciarne solo il bordo, con il riempimento trasparente. Tocca di nuovo per tornare indietro. Vale per i poligoni di KML, GeoJSON e GPX. Lo stato viene salvato e ripristinato al lancio successivo.</span></div>
               <div class="guide-item"><span class="guide-key">Modifica KML ✏</span><span class="guide-desc">Tocca la matita su un layer KML per modificarne i vertici: trascinali per spostarli, doppio tocco per eliminarne uno, trascina un punto intermedio tratteggiato per aggiungerne uno nuovo. Salva riporta le modifiche nel layer e aggiorna il KML in memoria. Annulla le scarta tutte.</span></div>
-              <div class="guide-item"><span class="guide-key">Configurazione mappe</span><span class="guide-desc">“Esporta configurazione” scrive un JSON con i servizi web che hai aggiunto — WMS, WFS, WMTS/XYZ, ArcGIS — conservando nome del layer, CRS, filtro, colore, opacità, visibilità e ordine di sovrapposizione, più le eventuali eccezioni SSL. L’importazione li ripristina su un altro dispositivo o dopo una reinstallazione. <b>Cosa non contiene:</b> i file che hai importato (KML, KMZ, GeoJSON, GPX), i tuoi disegni, i segnalibri e i tile in cache. Quelli stanno da un’altra parte sul dispositivo e viaggiano come file: esporta un layer da file dal suo elenco, e i disegni da Disegno &rarr; “Esporta tutto”. Le basemap offline scaricate compaiono nel JSON, ma solo come voce: i tile non ci sono, quindi su un altro dispositivo l’area va riscaricata. “Ripristina i predefiniti eliminati” rimette i layer e le mappe di serie che hai eliminato — utile se hai tolto per sbaglio un layer catastale, perché la ricerca per foglio e particella ha bisogno del layer Catasto Particelle per funzionare. Non tocca quello che hai aggiunto tu, e i predefiniti che hai ancora restano com’erano: colore, opacità, filtro e posizione nell’elenco.</span></div>
+              <div class="guide-item"><span class="guide-key">Configurazione mappe</span><span class="guide-desc">“Esporta configurazione” scrive un JSON con i servizi web che hai aggiunto — WMS, WFS, WMTS/XYZ, ArcGIS — conservando nome del layer, CRS, filtro, colore, opacità, visibilità e ordine di sovrapposizione, più le eventuali eccezioni SSL. L’importazione li ripristina su un altro dispositivo o dopo una reinstallazione. <b>Cosa non contiene:</b> i file che hai importato (KML, KMZ, GeoJSON, GPX), i tuoi disegni, i segnalibri e i tile in cache. Quelli stanno da un’altra parte sul dispositivo e viaggiano come file: esporta un layer da file dal suo elenco, e i disegni da Disegno &rarr; “Esporta tutto”. Nemmeno le basemap offline scaricate: i tile non viaggiano, e la mappa da cui le hai scaricate è già nel JSON — riscarichi l’area da quella. “Ripristina i predefiniti eliminati” rimette i layer e le mappe di serie che hai eliminato — utile se hai tolto per sbaglio un layer catastale, perché la ricerca per foglio e particella ha bisogno del layer Catasto Particelle per funzionare. Non tocca quello che hai aggiunto tu, e i predefiniti che hai ancora restano com’erano: colore, opacità, filtro e posizione nell’elenco.</span></div>
             </div>
 
             <div class="guide-section">
@@ -1016,7 +1016,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.3.8</span></div>
+      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.3.9</span></div>
       <div class="about-row"><span class="lbl">Autore</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">Licenza</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — software libero</a></span></div>
       <div class="about-row"><span class="lbl">Tecnologia</span><span class="val">Leaflet · Cordova · Android</span></div>
@@ -1411,17 +1411,27 @@ window.addEventListener('load', function nvCacheFullInit() {
       const legacy = cfgs.filter(c => !nameSet.has(OFFLINE_PREFIX + c.id));
       if (legacy.length) {
         _prompting = true;
+        /* Which pressure actually fired matters to the user: a full cache and a slow one
+           call for the same repair but are not the same problem, and this branch used to
+           announce slowness even when the probe was healthy and the byte budget was the
+           trigger. The consequence is spelled out too — OK removes these maps from the
+           list (_nvPurgeOffline drops the entry, not just its tiles), so promising that
+           re-downloading would "keep" them was simply wrong. */
         const ok = confirm(
-          'Alcune mappe che hai salvato usano un formato di archiviazione vecchio, che può rallentare l’app.\n\n' +
-          'Tocca OK per sistemarlo ora: dovrai riscaricare le aree delle mappe offline, ma l’app sarà più veloce e gestirà meglio lo spazio.\n\n' +
-          'Tocca Annulla per farlo più tardi: l’app potrebbe restare lenta, e te lo richiederemo alla prossima apertura.'
+          (reason === 'slow'
+            ? 'Alcune mappe che hai salvato usano un formato di archiviazione vecchio, che può rallentare l’app.\n\n'
+            : 'La cache delle mappe è piena (4 GB), e alcune mappe che hai salvato usano un formato di archiviazione vecchio.\n\n') +
+          'Mappe interessate: ' + legacy.map(c => c.name || c.id).join(', ') + '\n\n' +
+          'Tocca OK per sistemarlo ora: vengono cancellati i tile salvati durante la navigazione e queste mappe vengono tolte dall’elenco. ' +
+          'Per riaverle offline, riscarica l’area dalla mappa da cui le avevi scaricate.\n\n' +
+          'Tocca Annulla per farlo più tardi: te lo richiederemo alla prossima apertura.'
         );
         _prompting = false;
         if (!ok) { _deferred = true; return; }
         await wipeVolatile();
         legacy.forEach(c => { if (typeof window._nvPurgeOffline === 'function') window._nvPurgeOffline(c.id); });
         notifySW();
-        toast('Vecchia cache svuotata — riscarica le mappe offline per conservarle', 'success', 6000);
+        toast('Vecchia cache svuotata — le mappe interessate sono state tolte dall’elenco', 'success', 6000);
         return;
       }
 
