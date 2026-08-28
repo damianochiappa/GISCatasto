@@ -12,14 +12,8 @@ disponibili senza connessione.
 
 [![Licenza: GPL v3](https://img.shields.io/badge/Licenza-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-[Pagina del progetto](https://damianochiappa.github.io/GISCatasto/). L'app è in prova chiusa sul
-Play Store: la scheda pubblica non è ancora disponibile.
-
-<!-- Da riattivare quando la scheda del Play sara' pubblica, insieme al badge in index.md.
-     Verifica prima che l'URL non risponda 404.
 **Su Google Play:** [play.google.com/store/apps/details?id=com.geotool.giscatasto](https://play.google.com/store/apps/details?id=com.geotool.giscatasto)
 — [pagina del progetto](https://damianochiappa.github.io/GISCatasto/).
--->
 
 Questo repository contiene il codice sorgente della versione pubblicata, come richiede la GPL v3.
 
