@@ -21,12 +21,36 @@
   try { _rotationOn = localStorage.getItem('giscatasto_rotation') === '1'; } catch (_) {}
   let _navAuto = false;   // navigation is currently rotating the map (track-up)
 
+  /* The needle's tip swings on a radius of 7.5 CSS px: the svg is 20 px wide on a 24-unit
+     viewBox with the tip 9 units from the centre, so 9 * 20/24. Under half a pixel of tip
+     movement there is nothing on screen to show, and therefore no reason to write.
+     Why it needs a threshold of its own instead of trusting the map's: _setBearingIfVisible
+     gates on the MAP's half-diagonal — about 430 px on this 423x748 screen — so it lets through
+     any change above 0.133 deg. On a 7.5 px radius that is 0.017 px, a fifty-seventh of a pixel,
+     and each of those writes made the browser re-raster the whole control corner. That corner is
+     ONE composited surface shared with the navigation button, the GPS button and the attribution
+     (see the promotion block in app.css), and a surface is rastered as a unit — which is why the
+     three of them went dark and came back together on the device whenever the map was turning
+     under load. Nothing else in that corner ever changes; this was the only mover left in it.
+     ⚠ Compared against what is DRAWN, never against the previous target. Otherwise a tenth of a
+     degree per fix would sit under the threshold for ever and the needle would drift off north in
+     silence; this way the drift is applied as soon as it becomes visible. Same rule, and the same
+     reason, as _setBearingIfVisible in map.js. */
+  const _NEEDLE_R_PX    = 7.5;
+  const _NEEDLE_MIN_PX  = 0.5;
+  const _NEEDLE_MIN_DEG = _NEEDLE_MIN_PX / (_NEEDLE_R_PX * Math.PI / 180);   // ≈ 3.8°
+  let _drawnBearing = null;
+
   function _render() {
     if (!_svgEl) return;
     // setBearing applies CSS rotate(+theta) clockwise, so north on the map sits at
     // that same clockwise angle from screen-up — the needle matches it directly.
     const b = (typeof map.getBearing === 'function') ? map.getBearing() : 0;
-    _svgEl.style.transform = 'rotate(' + (b || 0) + 'deg)';
+    const t = b || 0;
+    if (_drawnBearing !== null &&
+        Math.abs(((t - _drawnBearing + 540) % 360) - 180) < _NEEDLE_MIN_DEG) return;
+    _drawnBearing = t;
+    _svgEl.style.transform = 'rotate(' + t + 'deg)';
   }
 
   /* Reflect the rotation state on the control: lit when the map can rotate (manual
@@ -52,8 +76,13 @@
       const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-compass');
       const a   = L.DomUtil.create('a', '', div);
       a.href = '#'; a.title = 'Bussola — tocca per riorientare la mappa a nord';
+      /* No transition on the transform, deliberately. Easing it over 150 ms means the browser
+         re-rasters the containing surface on EVERY frame of the animation — about nine repaints
+         of the whole corner to move the tip by a fraction of a pixel — because the needle is not
+         on a surface of its own. And it was wrong on its own terms: setBearing turns the map
+         instantly, so an eased needle trailed 150 ms behind the north it exists to point at. */
       a.innerHTML =
-        '<svg id="compass-svg" width="20" height="20" viewBox="0 0 24 24" style="display:block;transition:transform .15s ease">' +
+        '<svg id="compass-svg" width="20" height="20" viewBox="0 0 24 24" style="display:block">' +
           '<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.35"/>' +
           '<polygon points="12,3 14,11 12,10 10,11"  fill="#ff4757"/>' +
           '<polygon points="12,21 10,13 12,14 14,13" fill="rgba(200,220,255,0.55)"/>' +

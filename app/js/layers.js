@@ -1107,6 +1107,11 @@ function _startKmlEdit(origLayer, layerId, storeId) {
   try { map.removeLayer(origLayer); } catch(_) {}
   tempGroup.addTo(map);
 
+  /* The status line describes this session and no earlier one: start it empty, so a warning
+     raised by a previous file cannot survive into a file that has no vertices at all. */
+  _nvVxSuppressed.clear();
+  _nvRenderEditHint();
+
   const handler = new L.EditToolbar.Edit(map, { featureGroup: tempGroup });
   handler.enable();
   _patchVertexDelete(tempGroup);
@@ -1144,6 +1149,41 @@ const _NV_VX_MID_ICON = new L.DivIcon({
 // Min screen distance from mid center to either real-vertex center. Below
 // this the mid bounding-box would overlap a red, so we hide it.
 const _NV_VX_MIN_GAP = (_NV_VX_REAL_SIZE + _NV_VX_MID_SIZE) / 2;
+
+// Max handles the editor may materialise at once. Leaflet.draw builds one marker per vertex
+// plus one midpoint per segment, so a recorded track costs two DOM elements per fix: measured
+// on the bench, 8000 vertices add 16003 elements and ~53 MB and the app stops responding.
+// 400 is the largest count whose build cost stayed inside measurement noise (800 already costs
+// seconds, and the curve is worse than linear). Above it the editor windows to the viewport.
+const _NV_VX_CAP = 400;
+const _NV_VX_HINT_DEFAULT = 'trascina per spostare · doppio tocco per eliminare · trascina il punto intermedio per aggiungerne uno';
+const _NV_VX_HINT_ZOOM = 'Zoom troppo ampio per modificare i vertici — avvicinati';
+
+/* The edit bar's second line doubles as the editor's status line: it says how to edit while
+   editing is possible, and why it is not when the viewport holds more vertices than the cap.
+   A toast would be wrong here — this is a state that lasts until the user zooms, not an event,
+   and repeating it on every map move is what would flood the toast lane.
+   There is one line and a file holds as many geometries as it likes, each deciding for itself
+   whether it can show handles — a GPS export is often a long track plus a drawn shape. So the
+   line reports the SET: it warns while ANY geometry has been left without handles, rather than
+   saying whatever the geometry enabled last happened to need, which would leave a suppressed
+   track with no explanation at all. A handler that is torn down stops counting, so the warning
+   cannot outlive the file that raised it either. */
+const _nvVxSuppressed = new Set();
+
+function _nvRenderEditHint() {
+  const el = document.getElementById('kml-edit-hint');
+  if (!el) return;
+  const on = _nvVxSuppressed.size > 0;
+  el.textContent = on ? _NV_VX_HINT_ZOOM : _NV_VX_HINT_DEFAULT;
+  el.classList.toggle('nv-vx-blocked', on);
+}
+
+function _nvSetEditHint(handler, suppressed) {
+  if (suppressed) _nvVxSuppressed.add(handler);
+  else _nvVxSuppressed.delete(handler);
+  _nvRenderEditHint();
+}
 
 function _styleRealVertex(m) {
   if (!m) return;
@@ -1193,7 +1233,12 @@ function _attachVertexDelete(layer, tempGroup) {
           toastMsg(isPolygon ? 'Poligono: minimo 3 vertici' : 'Linea: minimo 2 vertici', 'warn');
           return;
         }
-        ring.splice(mi, 1);
+        // The vertex's own index, not its position in the handle array: with windowed editing
+        // only a subset of the vertices has a handle, so the two stop being the same number and
+        // splicing by position would delete a different vertex than the one tapped.
+        const vi = (typeof m._index === 'number') ? m._index : mi;
+        if (vi < 0 || vi >= ring.length) return;
+        ring.splice(vi, 1);
         layer.setLatLngs(lls);
         layer.edited = true;
         layer.editing.disable();
@@ -1238,6 +1283,110 @@ function _attachVertexDelete(layer, tempGroup) {
     return out;
   };
   L.Edit.PolyVerticesEdit.__nvMidPatched = true;
+})();
+
+/* Windowed vertex editing. Leaflet.draw materialises a handle for every vertex plus a midpoint
+   for every segment, so a recorded track costs two DOM elements per fix — an 8 km walk freezes
+   the app. Above _NV_VX_CAP the handler only materialises the vertices inside the current
+   viewport and rebuilds them when the map settles.
+   The geometry is never touched: the polyline keeps all its points, so save and cancel see
+   exactly what they see today. Only the handles are virtualised. */
+(function _patchWindowedVertexEditing() {
+  if (!L.Edit || !L.Edit.PolyVerticesEdit || L.Edit.PolyVerticesEdit.__nvWindowed) return;
+  const proto = L.Edit.PolyVerticesEdit.prototype;
+  const origInit = proto._initMarkers;
+  const origAddHooks = proto.addHooks;
+  const origRemoveHooks = proto.removeHooks;
+  const origMarkerClick = proto._onMarkerClick;
+  const origMiddle = proto._createMiddleMarker;
+
+  const shapeLen = h => { try { return (h._defaultShape() || []).length; } catch(_) { return 0; } };
+  // A rebuilt window is a new set of markers: the app's own double-tap delete and the vertex
+  // styling are bound per marker, so they have to be re-applied or panning would quietly
+  // disarm them.
+  const reattach = h => { try { _attachVertexDelete(h._poly, null); } catch(_) {} };
+  const rebuild = h => { try { h.updateMarkers(); reattach(h); } catch(_) {} };
+
+  proto._initMarkers = function () {
+    const latlngs = this._defaultShape();
+    const map = this._poly && this._poly._map;
+    // At or below the cap nothing changes: stock markers, stock order, stock behaviour.
+    if (!map || !latlngs || latlngs.length <= _NV_VX_CAP) {
+      this._nvWindowed = false;
+      _nvSetEditHint(this, false);
+      return origInit.call(this);
+    }
+    if (!this._markerGroup) this._markerGroup = new L.LayerGroup();
+    this._markers = [];
+    this._nvWindowed = true;
+
+    const bounds = map.getBounds().pad(0.2);
+    const visible = [];
+    for (let i = 0; i < latlngs.length; i++) {
+      if (!bounds.contains(latlngs[i])) continue;
+      visible.push(i);
+      if (visible.length > _NV_VX_CAP) break;   // one past the cap already settles the question
+    }
+    // Past the cap, no handle at all: materialising a subset of what is on screen would let the
+    // user edit some of the vertices they can see and silently not the others.
+    if (!visible.length || visible.length > _NV_VX_CAP) { _nvSetEditHint(this, true); return; }
+    _nvSetEditHint(this, false);
+
+    for (const i of visible) {
+      const m = this._createMarker(latlngs[i], i);   // _index stays the index in the FULL array
+      m.on('click', this._onMarkerClick, this);
+      m.on('contextmenu', this._onContextMenu, this);
+      this._markers.push(m);
+    }
+    // A midpoint belongs between two vertices that really are neighbours. Between handles whose
+    // indices are not consecutive it would sit on a segment the window is not showing, and
+    // dragging it would insert a point in the wrong place.
+    for (let k = 1; k < this._markers.length; k++) {
+      const a = this._markers[k - 1], b = this._markers[k];
+      if (b._index - a._index === 1) {
+        this._createMiddleMarker(a, b);
+        this._updatePrevNext(a, b);
+      }
+    }
+  };
+
+  proto.addHooks = function () {
+    origAddHooks.call(this);
+    const map = this._poly && this._poly._map;
+    if (!map || shapeLen(this) <= _NV_VX_CAP) return;
+    this._nvOnMove = () => {
+      if (this._nvTid) clearTimeout(this._nvTid);
+      this._nvTid = setTimeout(() => { this._nvTid = null; rebuild(this); }, 150);
+    };
+    map.on('moveend zoomend', this._nvOnMove);
+  };
+
+  proto.removeHooks = function () {
+    const map = this._poly && this._poly._map;
+    if (map && this._nvOnMove) map.off('moveend zoomend', this._nvOnMove);
+    this._nvOnMove = null;
+    if (this._nvTid) { clearTimeout(this._nvTid); this._nvTid = null; }
+    _nvSetEditHint(this, false);   // a handler that no longer exists suppresses nothing
+    origRemoveHooks.call(this);
+  };
+
+  /* After a structural change the library splices this._markers by the vertex index, which only
+     equals the position in that array when every vertex has a handle. Windowed, the geometry
+     still comes out right (_spliceLatLngs works on the true index) but the handle array does
+     not, so the window is rebuilt from the polyline as soon as the edit has finished. */
+  proto._onMarkerClick = function (e) {
+    origMarkerClick.call(this, e);
+    if (this._nvWindowed) setTimeout(() => rebuild(this), 0);
+  };
+
+  proto._createMiddleMarker = function (m1, m2) {
+    const out = origMiddle.call(this, m1, m2);
+    const mid = m1._middleRight;
+    if (mid && this._nvWindowed) mid.once('dragend click', () => setTimeout(() => rebuild(this), 0));
+    return out;
+  };
+
+  L.Edit.PolyVerticesEdit.__nvWindowed = true;
 })();
 
 function _saveKmlEdit() {
@@ -1507,5 +1656,25 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', () => {
       if (btn.dataset.panel !== 'draw') _cancelDissolve();
     });
+  });
+});
+
+/* ===== WFS QUEUE INDICATOR =====
+   With the WFS requests running one at a time, the layers appear one after another instead of all
+   at once. That is the point — it is what keeps the main thread breathing — but it leaves a gap
+   the user cannot close on their own: a map that is still filling looks exactly like a map that
+   has finished and is missing data. The second reading is the dangerous one, because it says the
+   layer is broken when it is merely next in line.
+   So every WFS row states which of the three it is in: loading now, waiting its turn, or done.
+   Rows are matched by layer OBJECT, never by name — two services can carry the same attribution,
+   and a name match would light up the wrong row. */
+map.on('wfsqueue', q => {
+  const list = document.getElementById('layer-list');
+  if (!list) return;
+  list.querySelectorAll('.layer-item[data-is-wfs]').forEach(el => {
+    const layer = loadedLayers[el.dataset.id];
+    if (!layer) return;
+    el.classList.toggle('wfs-loading', layer === q.busy);
+    el.classList.toggle('wfs-queued', q.waiting.indexOf(layer) !== -1);
   });
 });

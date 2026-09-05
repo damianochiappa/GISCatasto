@@ -131,6 +131,9 @@ const _TOAST_LAST = new Map();
 // Cap on concurrent toasts per non-sidebar host: keeps the map viewport uncluttered when
 // several layers speak at once. Errors are exempt (never dropped by cap).
 const _TOAST_MAP_CAP = 2;
+// How long a message stays "just gone", during which an identical one is not re-shown.
+const _TOAST_REAPPEAR_MS = 2500;
+const _TOAST_GONE = new Map();
 
 function toastMsg(msg, type='', dur, target='map') {
   if (dur === undefined) dur = type === 'error' ? 4000 : type === 'warn' ? 3500 : 2500;
@@ -158,16 +161,45 @@ function toastMsg(msg, type='', dur, target='map') {
     if (el._removeTid) clearTimeout(el._removeTid);
     el._dismissTid = setTimeout(() => {
       el.classList.remove('show');
-      el._removeTid = setTimeout(() => { if (el.parentNode === host) host.removeChild(el); }, 320);
+      el._removeTid = setTimeout(() => {
+        if (el.parentNode === host) host.removeChild(el);
+        _TOAST_GONE.set(el.textContent, Date.now());   // see the re-appearance guard below
+      }, 320);
     }, dur);
   };
-  // Dedup: identical visible toast → reset its timer, no stacking.
-  const existing = Array.from(host.children).find(c => c.textContent === fullText);
-  if (existing) { _schedule(existing); return; }
+  /* Purely about how it LOOKS: the same message coming back within a second of having faded out
+     is a flicker, not information. The dedupe above only merges toasts that are on screen at the
+     same moment, and the cooldown key is (target, type, first 40 chars) — so a text whose count
+     changes ("2 layers" then "3 layers") mints a new key and gets straight through. This is
+     narrower and blunter on purpose: EXACTLY the same text, within _TOAST_REAPPEAR_MS of its own
+     disappearance, is dropped. It cannot hide anything new, because new information reads
+     differently. Applies to errors too — an error blinking at the user is no more readable than
+     a warning doing it. */
+  const _goneAt = _TOAST_GONE.get(fullText);
+  if (_goneAt && Date.now() - _goneAt < _TOAST_REAPPEAR_MS) return;
+  // Dedup: identical visible toast → reset its timer, no stacking. A toast already fading out
+  // is not a candidate: reviving it would make it jump back to full opacity mid-fade.
+  const existing = Array.from(host.children).find(c => c.textContent === fullText && !c._leaving);
+  if (existing) { existing.classList.add('show'); _schedule(existing); return; }
   // Rate-limit by (target, type, msg-prefix): similar-but-not-identical toasts (different
   // layer names, different counts) within cooldown are dropped silently. Errors bypass.
   if (type !== 'error') {
-    const cdKey = target + '\u0000' + type + '\u0000' + fullText.slice(0, 40);
+    /* On the map lane the numbers in a message are the part that CHANGES while everything else
+       stays the same — "2 layers: no features…" then "3 layers: no features…" — so keying on the
+       raw text mints a new key each time and every variant gets through. Reported from the field
+       as duplicate toasts piling up during rotation, where the count of empty layers moves
+       constantly. Collapsing digit runs makes those one key, which is what the user sees anyway.
+       Only this lane: elsewhere the number IS the message ("imported 3 shapes"), and two
+       different counts are two different pieces of news. */
+    /* On the map lane, what VARIES between two otherwise identical notices is the layer name and
+       the count — "Protected sites: no features…" then "WaterCourse: no features…" — so keying on
+       the raw text lets every variant through, and does so most often under load, when replies
+       arrive far enough apart to be reported one layer at a time. Both are collapsed here.
+       Elsewhere the name and the number ARE the message ("imported 3 shapes") and are kept. */
+    const cdText = target === 'map-quiet'
+      ? fullText.replace(/"[^"]*"/g, '"#"').replace(/\d+/g, '#')
+      : fullText;
+    const cdKey = target + '\u0000' + type + '\u0000' + cdText.slice(0, 40);
     const now = Date.now();
     const last = _TOAST_LAST.get(cdKey) || 0;
     const cd = _TOAST_COOLDOWN_MS[type] != null ? _TOAST_COOLDOWN_MS[type] : 4000;
@@ -178,16 +210,38 @@ function toastMsg(msg, type='', dur, target='map') {
     if (_TOAST_LAST.size > 32) {
       const purgeBefore = now - 48000;
       _TOAST_LAST.forEach((t, k) => { if (t < purgeBefore) _TOAST_LAST.delete(k); });
+      _TOAST_GONE.forEach((t, k) => { if (t < purgeBefore) _TOAST_GONE.delete(k); });
     }
   }
-  // FIFO cap on the map container: drop the oldest non-error toast when at capacity.
+  /* FIFO cap on the map container. Evicting used to removeChild the victim OUTRIGHT — no
+     dismissal, no fade — so a toast vanished mid-life at the instant the next one appeared in
+     its place. That snap is what reads as a flash when several layers speak in a row, and it
+     was measured before the collectors existed: 5 inserted, 3 torn out, 2 left standing.
+     Now the victim is dismissed exactly the way it would have dismissed itself, through the
+     .28s opacity/transform transition it already has, and a toast on its way out no longer
+     counts against the cap so it cannot be evicted a second time.
+     Errors are still preferred as survivors — they are the ones worth reading — but they are no
+     longer exempt from the cap altogether: unbounded errors stacking on top of each other is
+     the overlap itself, and since a burst of them now collapses to one toast upstream, the
+     exemption bought clutter rather than safety. */
   if (target !== 'sidebar') {
-    const nonError = Array.from(host.children).filter(c => !c.classList.contains('error'));
-    while (nonError.length >= _TOAST_MAP_CAP) {
-      const victim = nonError.shift();
+    const live = Array.from(host.children).filter(c => !c._leaving);
+    while (live.length >= _TOAST_MAP_CAP) {
+      let idx = live.findIndex(c => !c.classList.contains('error'));
+      if (idx === -1) idx = 0;
+      const victim = live.splice(idx, 1)[0];
       if (victim._dismissTid) clearTimeout(victim._dismissTid);
       if (victim._removeTid) clearTimeout(victim._removeTid);
-      if (victim.parentNode === host) host.removeChild(victim);
+      victim._leaving = true;
+      victim.classList.remove('show');
+      victim._removeTid = setTimeout(() => {
+        if (victim.parentNode === host) host.removeChild(victim);
+        /* Record it here too, not only on natural expiry: the re-appearance guard reads this map,
+           and a toast pushed out by the cap used to leave NO trace — so an identical message could
+           come straight back. That is exactly the rotation case, where the cap is the busy path,
+           which is why the guard looked like it "did not always work". */
+        _TOAST_GONE.set(victim.textContent, Date.now());
+      }, 320);
     }
   }
   const item = document.createElement('div');
@@ -202,6 +256,45 @@ function _xmlEsc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
+/* A one-button notice drawn by the PAGE, not by the system. Deliberately not alert()/confirm():
+   both hold the main thread for as long as they are on screen, and that costs twice over here.
+   Once because replies keep arriving while the thread is held and cannot be read, so the worst
+   moment is not while the dialog is up but right after it is dismissed, when the backlog lands all
+   at once. And once because a held thread is counted as a long task, which corrupts the very
+   section of the report used to diagnose the slowness the dialog is reporting — three field
+   sessions measured 233 s, 8 s and 5.7 s of "blocked" time that was the dialog itself.
+   The cache-full prompt keeps confirm() on purpose: it asks a real question, fires at most once
+   every five minutes and only above 90% of quota, and the user is stopping to decide anyway.
+   ⚠ No backdrop-click and no Escape: the condition is a state that keeps costing until something
+   is switched off, not a preference to be waved away. One button, and it has to be pressed. */
+function showNoticeModal(title, body, onDismiss) {
+  let modal = document.getElementById('notice-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'notice-modal';
+    modal.className = 'modal-backdrop';
+    modal.innerHTML =
+      '<div class="modal-box">' +
+        '<h3 id="notice-modal-title"></h3>' +
+        '<p class="modal-desc" id="notice-modal-body" style="white-space:pre-line"></p>' +
+        '<div class="modal-btns">' +
+          '<button class="btn btn-primary" id="notice-modal-ok">Ho capito</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(modal);
+    // Attached once, on an element that is never destroyed — so there is nothing to remove later.
+    document.getElementById('notice-modal-ok').addEventListener('click', () => {
+      modal.style.display = 'none';
+      const cb = modal._cb; modal._cb = null;
+      if (cb) { try { cb(); } catch (_) {} }
+    });
+  }
+  document.getElementById('notice-modal-title').textContent = title;
+  document.getElementById('notice-modal-body').textContent = body;
+  modal._cb = onDismiss;
+  modal.style.display = 'flex';
 }
 
 function showPromptModal(message, defaultValue, onConfirm, hint) {
@@ -1002,6 +1095,96 @@ async function buildDiagReport() {
     kv('Zoom', map.getZoom());
     kv('Bearing', (typeof map.getBearing === 'function' ? map.getBearing() + '°' : 'n/a'));
   } catch (_) { kv('Map', 'not initialised'); }
+
+  /* ---- responsiveness: the numbers a future "the app is slowing down" notice would use ---- */
+  /* Two independent instruments on purpose. The frame probe times what the user feels while the
+     map renders; the long-task observer sees blocks nobody gestured for. If they ever disagree,
+     that disagreement is itself the finding — which is why neither is dropped for being
+     redundant. Both are reported next to WHAT caused them, so "rotation is to blame" stays a
+     claim this file can contradict.
+     ⚠ This replaced a rotation-only probe. That one could only ever accuse rotation, because it
+     was the only thing it sampled — and the field data went on to show a pure pan costs MORE than
+     a pure turn. An instrument that can only implicate one suspect is not evidence.
+     In its own try: a failure here must not make the Map section above print "not initialised"
+     about a map that is running perfectly well. */
+  sec('Performance');
+  try {
+    const f = window._nvLastFrame;
+    if (f) {
+      const fBase = parseFloat(localStorage.getItem(window._nvFrameProbeBaseKey || 'nv_frame_base'));
+      kv('Frame time (med)', f.ms.toFixed(1) + ' ms  (' + f.cause + ', ' + f.frames + ' frames)');
+      kv('Best ever on device', isFinite(fBase) ? fBase.toFixed(1) + ' ms' : 'not recorded yet');
+      kv('Slowdown vs best', f.ratio.toFixed(1) + ' x');
+      kv('Vector paths', f.paths >= 0 ? f.paths : 'not counted');
+      /* Markers sit next to paths because the bearing freeze does not reach them: leaflet-rotate
+         subscribes every Marker to the rotate event, so they update on every degree while the
+         paths stay frozen. If a turn costs more than a pan over the same view, this is the first
+         number to look at. */
+      kv('Markers', f.markers >= 0 ? f.markers : 'not counted');
+      /* The report is saved minutes after the trouble, by which time the last window is usually
+         the menu opening. The worst one is the reason the user is sending the file at all. */
+      const w = window._nvWorstFrame;
+      if (w && w !== f) {
+        kv('Worst this session', w.ms.toFixed(1) + ' ms  (' + w.cause + ', ' +
+                                 w.ratio.toFixed(1) + ' x, ' + w.paths + ' paths)');
+      }
+    } else {
+      kv('Frame time', 'no map interaction yet this session');
+    }
+  } catch (_) { kv('Frame time', 'unavailable'); }
+  /* The WFS refresh cycle — the wait between a gesture and a complete map, and the number the
+     "too many layers" notice is thresholded on. Reported next to the frame times because the two
+     answer different questions: the frame probe says whether drawing is smooth, this says how long
+     the map stays incomplete, and a session can be bad at one and fine at the other. */
+  try {
+    const c = window._nvLastWfsCycle, cw = window._nvWorstWfsCycle;
+    const openSince = window._nvWfsCycleOpen;
+    /* A cycle still running when the report is taken gets its own line. Without it the report read
+       "no WFS refresh yet this session" on a map that had been fetching for three and a half
+       minutes — true to the letter and the opposite of useful, because a cycle that never closes
+       is never measured. An open cycle is the single most telling line on a jammed session. */
+    if (openSince) {
+      kv('WFS cycle in progress', ((Date.now() - openSince) / 1000).toFixed(1) + ' s and still open');
+    }
+    /* ⚠ The reading share is the line that says WHERE the wait went, and it is here because
+       reading it off the total was guesswork: a 63.7 s cycle carrying 346 features was taken for a
+       slow app until the arithmetic showed the parse could only have been a few hundred
+       milliseconds of it. Printed as a share because the absolute number means nothing without the
+       wall time beside it — 0.3 s is fine inside 1 s and an idle app inside 45.
+       ⚠ "reading", never "CPU": the span includes the yields between build chunks and the paint in
+       them, so it exceeds blocked main-thread time and was seen to (40.9 s against 22.4 s of long
+       tasks in one session). It measures the app working, not the thread being held. */
+    /* A stalled span is named separately and never rolled into the share: it is the one part of a
+       cycle whose cost has no explanation, and averaging it away is how it stayed invisible. */
+    const share = x => (x && x.ms > 0 && typeof x.readMs === 'number')
+      ? ', ' + (x.readMs / 1000).toFixed(1) + ' s reading = ' + Math.round(100 * x.readMs / x.ms) + '%'
+        + (x.stalledMs ? ', ' + (x.stalledMs / 1000).toFixed(1) + ' s STALLED' : '')
+      : '';
+    if (c) {
+      kv('WFS refresh cycle', (c.ms / 1000).toFixed(1) + ' s  (' + c.layers + ' layers, ' +
+                              c.features.toLocaleString() + ' features' + share(c) + ')');
+      if (cw && cw !== c) {
+        kv('Worst cycle', (cw.ms / 1000).toFixed(1) + ' s  (' + cw.layers + ' layers, ' +
+                          cw.features.toLocaleString() + ' features' + share(cw) + ')');
+      }
+    } else {
+      kv('WFS refresh cycle', openSince ? 'none completed this session'
+                                        : 'no WFS refresh yet this session');
+    }
+  } catch (_) { kv('WFS refresh cycle', 'unavailable'); }
+  try {
+    const lt = window._nvLongTasks;
+    if (!lt) {
+      /* Stated, not silently omitted: a missing row would be read as "no long tasks", which is
+         the opposite of what an unavailable API means. */
+      kv('Long tasks', 'PerformanceObserver longtask not available in this WebView');
+    } else if (!lt.count) {
+      kv('Long tasks', 'none over 50 ms since launch');
+    } else {
+      kv('Long tasks', lt.count + '  (worst ' + lt.worstMs.toFixed(0) + ' ms, ' +
+                       (lt.totalMs / 1000).toFixed(1) + ' s blocked in total)');
+    }
+  } catch (_) { kv('Long tasks', 'unavailable'); }
 
   // Name each layer by its attribution — that is what the app already sets to the
   // layer's own name. Long ones are provider credits (basemaps): truncate rather
