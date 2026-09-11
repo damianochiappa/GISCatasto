@@ -2,33 +2,6 @@
   "v": 1,
   "maps": [
     {
-      "id": "custom_ws_1",
-      "type": "wmts",
-      "url": "https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png",
-      "name": "CartoDB Positron",
-      "layers": "",
-      "version": "1.1.1",
-      "protected": false
-    },
-    {
-      "id": "custom_ws_2",
-      "type": "wmts",
-      "url": "https://cartodb-basemaps-a.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png",
-      "name": "CartoDB Dark Matter",
-      "layers": "",
-      "version": "1.1.1",
-      "protected": false
-    },
-    {
-      "id": "custom_ws_3",
-      "type": "wmts",
-      "url": "https://cartodb-basemaps-a.global.ssl.fastly.net/rastertiles/voyager/{z}/{x}/{y}.png",
-      "name": "CartoDB Voyager",
-      "layers": "",
-      "version": "1.1.1",
-      "protected": false
-    },
-    {
       "id": "custom_ws_5",
       "type": "arcgis",
       "url": "https://services.arcgisonline.com/arcgis/rest/services/World_Shaded_Relief/MapServer",

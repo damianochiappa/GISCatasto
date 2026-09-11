@@ -49,7 +49,7 @@ conservato dall'app né trasmesso ad altri.
 |---|---|---|
 | Agenzia delle Entrate — cartografia catastale | Consultazione di fogli e particelle | Area richiesta |
 | Geoportale Nazionale (PCN) | Cascata regione / provincia / comune; ortofoto nazionale come mappa di base | Filtri amministrativi e area richiesta |
-| OpenStreetMap, OpenTopoMap, CARTO | Mappe di base | Area richiesta |
+| OpenStreetMap, OpenTopoMap | Mappe di base | Area richiesta |
 | Esri ArcGIS Online | Mappa satellitare e servizi ArcGIS | Area richiesta |
 | Nominatim (OpenStreetMap) | Ricerca di un indirizzo | Il testo cercato |
 | OSRM / routing OpenStreetMap | Calcolo di un percorso | Partenza e destinazione |
@@ -85,7 +85,7 @@ I servizi qui sopra sono pubblicati dai rispettivi enti; questi sono i loro indi
 - Agenzia delle Entrate — [consultazione cartografia catastale (WMS/WFS INSPIRE)](https://www.agenziaentrate.gov.it/portale/it/web/guest/schede/fabbricatiterreni/consultazione-cartografia-catastale/servizio-consultazione-cartografia) · [Geoportale Cartografico Catastale](https://geoportale.cartografia.agenziaentrate.gov.it/)
 - [Geoportale Nazionale](https://gn.mase.gov.it/portale/) — Ministero dell'Ambiente e della Sicurezza Energetica
 - Geoportali regionali: [Friuli-Venezia Giulia](https://irdat.regione.fvg.it/) · [Lazio](https://geoportale.regione.lazio.it/) · [Liguria](https://geoportal.regione.liguria.it/) · [Puglia](https://pugliacon.regione.puglia.it/web/sit-puglia-sit) · [Sardegna](https://www.sardegnageoportale.it/) · [Sicilia](https://www.sitr.regione.sicilia.it/) · [Toscana](https://www.regione.toscana.it/-/geoscopio)
-- [OpenStreetMap](https://www.openstreetmap.org/copyright) · [OpenTopoMap](https://opentopomap.org/about) · [CARTO](https://carto.com/attributions) · [Esri](https://www.esri.com/en-us/legal/terms/full-master-agreement) · [Open-Meteo](https://open-meteo.com/)
+- [OpenStreetMap](https://www.openstreetmap.org/copyright) · [OpenTopoMap](https://opentopomap.org/about) · [Esri](https://www.esri.com/en-us/legal/terms/full-master-agreement) · [Open-Meteo](https://open-meteo.com/)
 
 ## Minori
 

@@ -32,9 +32,11 @@
     'tile.openstreetmap.org',      // OSMF tile usage policy: bulk downloading forbidden
     'tile.opentopomap.org',        // volunteer-run, same policy family
     'basemaps.cartocdn.com',       // CARTO free tier
-    'cartodb-basemaps',            // same provider, older CDN hostname: three bundled maps in
-                                   // giscatasto-config.json still use it and slipped past the
-                                   // cartocdn match above
+    'cartodb-basemaps',            // same provider, older CDN hostname. The three bundled maps
+                                   // that used it are gone (see BASEMAPS in map.js), but both
+                                   // entries stay: "Aggiungi mappa web" can still reach CARTO
+                                   // by hand, and the block is about their terms, not about
+                                   // what we happen to ship
     'services.arcgisonline.com',   // Esri: no offline caching without a licence
     // Not bundled, but reachable by typing the URL into "Add web map": Google's tile
     // endpoints are not an open service at all and caching them is squarely prohibited.

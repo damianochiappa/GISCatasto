@@ -979,7 +979,14 @@ function _fmtBytes(b) {
 async function buildDiagReport() {
   const L = [];
   const sec = t => { L.push('', '─── ' + t + ' ' + '─'.repeat(Math.max(0, 56 - t.length)), ''); };
-  const kv  = (k, v) => L.push('  ' + String(k).padEnd(22) + (v === undefined || v === null ? 'n/a' : v));
+  /* ⚠ padEnd is a column, not a separator: a label of exactly 22 characters or more receives no
+     padding at all and runs straight into its value. A 06/09 field report reads
+     "cache in same windownot sampled in this window" for precisely that reason. Short labels still
+     go through padEnd, so every existing line keeps its column; this only guarantees that a long
+     one cannot glue itself to what it is labelling. */
+  const kv  = (k, v) => { const s = String(k);
+    return L.push('  ' + (s.length >= 22 ? s + '  ' : s.padEnd(22)) +
+                  (v === undefined || v === null ? 'n/a' : v)); };
 
   L.push('GISCATASTO — DIAGNOSTIC REPORT');
   L.push(new Date().toString());
@@ -1093,7 +1100,10 @@ async function buildDiagReport() {
     const c = map.getCenter();
     kv('Centre', c.lat.toFixed(5) + ', ' + c.lng.toFixed(5));
     kv('Zoom', map.getZoom());
-    kv('Bearing', (typeof map.getBearing === 'function' ? map.getBearing() + '°' : 'n/a'));
+    /* Rounded: the raw value printed 254.81402552823658° in the 05/09 reports, seventeen digits
+       of a quantity nobody reads past the degree. */
+    kv('Bearing', (typeof map.getBearing === 'function'
+                     ? (Math.round(map.getBearing() * 10) / 10) + '°' : 'n/a'));
   } catch (_) { kv('Map', 'not initialised'); }
 
   /* ---- responsiveness: the numbers a future "the app is slowing down" notice would use ---- */
@@ -1112,9 +1122,45 @@ async function buildDiagReport() {
     const f = window._nvLastFrame;
     if (f) {
       const fBase = parseFloat(localStorage.getItem(window._nvFrameProbeBaseKey || 'nv_frame_base'));
-      kv('Frame time (med)', f.ms.toFixed(1) + ' ms  (' + f.cause + ', ' + f.frames + ' frames)');
+      /* ⚠ Named "last window", not "frame time". It was the headline for one session and it was
+         read as a verdict on the session: on 05/09 it printed 99.3 ms while the same session held
+         windows of 33.0, 41.6 and 66.0 — it is simply whatever the user did last, and by the time
+         the report is saved that is usually the menu opening. The session statistics below are
+         the verdict; this line is kept because the last window is the one whose deltas and cache
+         reading are still meaningful. */
+      kv('Last window', f.ms.toFixed(1) + ' ms  (' + (f.measured || f.cause) + ', ' +
+                        f.frames + ' frames, ' + f.ratio.toFixed(1) + ' x)');
+      /* What the view actually DID, beside what the events were called. The two disagree by
+         construction — every rotation also fires 'move' — and the whole reason a pure rotation
+         never appeared in a field report is that nothing ever printed this. */
+      if (f.dB != null) {
+        kv('  view moved', 'bearing ' + f.dB.toFixed(0) + '°, zoom ' + f.dZ.toFixed(2) +
+                           ', centre ' + Math.round(f.dPx) + ' px' +
+                           (f.cause ? '   (events: ' + f.cause + ')' : ''));
+      }
       kv('Best ever on device', isFinite(fBase) ? fBase.toFixed(1) + ' ms' : 'not recorded yet');
+      /* The floor under the baseline, printed so the baseline can be checked against it rather
+         than trusted. A "best" below the refresh period is impossible and used to go unnoticed:
+         a baseline of 14.6 ms on a ~16.5 ms panel inflated every ratio it reported.
+         "Not established" is a reading, not a gap: it says the session never drew a frame at full
+         speed, which is worth knowing on its own — and it is the state in which the floor must
+         keep its hands off the baseline. */
+      kv('Refresh period (est.)', isFinite(f.vsync)
+        ? f.vsync.toFixed(1) + ' ms' +
+          (isFinite(fBase) && fBase < f.vsync * 0.95 ? '   ⚠ baseline is below this' : '')
+        : 'not established — no full-speed frame this session');
       kv('Slowdown vs best', f.ratio.toFixed(1) + ' x');
+      /* THE PAIR. Two channels sampled in the same window: the frame channel is the app's own
+         main thread, the cache channel is I/O that touches no graphics at all. Both up together
+         means the machine was busy; the frame channel alone means the app was. On 05/09 the two
+         existed but never sampled at the same moment, so the question could not be settled. */
+      if (f.cacheMs != null) {
+        kv('  cache this window', f.cacheMs.toFixed(1) + ' ms' +
+           (isFinite(f.cacheRatio) ? '  (' + f.cacheRatio.toFixed(1) + ' x)' : '') +
+           '   vs frame ' + f.ratio.toFixed(1) + ' x');
+      } else {
+        kv('  cache this window', 'not sampled in this window');
+      }
       kv('Vector paths', f.paths >= 0 ? f.paths : 'not counted');
       /* Markers sit next to paths because the bearing freeze does not reach them: leaflet-rotate
          subscribes every Marker to the rotate event, so they update on every degree while the
@@ -1125,13 +1171,57 @@ async function buildDiagReport() {
          the menu opening. The worst one is the reason the user is sending the file at all. */
       const w = window._nvWorstFrame;
       if (w && w !== f) {
-        kv('Worst this session', w.ms.toFixed(1) + ' ms  (' + w.cause + ', ' +
+        kv('Worst this session', w.ms.toFixed(1) + ' ms  (' + (w.measured || w.cause) + ', ' +
                                  w.ratio.toFixed(1) + ' x, ' + w.paths + ' paths)');
       }
+      /* ⭐ The comparison the field actually asks for: does turning cost more than panning over
+         the same view? Keyed on what the view DID, so 'rot' is a real row and not folded into
+         'pan+rot' by an event name. On 05/09 this had to be reconstructed by hand out of the
+         event log, pairing windows minutes apart and hoping the scene had not changed. */
+      try {
+        const by = window._nvFrameByCause;
+        const keys = by ? Object.keys(by) : [];
+        if (keys.length) {
+          const pct = (a, p) => { const s = a.slice().sort((x, y) => x - y);
+                                  return s[Math.min(s.length - 1, Math.floor(p * (s.length - 1)))]; };
+          L.push('  By what the view did (whole session):');
+          keys.sort((a, b) => by[b].n - by[a].n).forEach(k => {
+            const e = by[k];
+            if (!e.ms.length) return;
+            const md = pct(e.ms, 0.5), p9 = pct(e.ms, 0.9);
+            L.push('  · ' + k.padEnd(12) + ' n=' + String(e.n).padStart(3) +
+                   '  med ' + md.toFixed(1) + ' ms' +
+                   '  p90 ' + p9.toFixed(1) + ' ms' +
+                   '  worst ' + e.worst.toFixed(1) + ' x');
+          });
+        }
+      } catch (_) {}
     } else {
       kv('Frame time', 'no map interaction yet this session');
     }
   } catch (_) { kv('Frame time', 'unavailable'); }
+  /* What a bearing change costs SYNCHRONOUSLY, and how much of that the freeze does not save.
+     The freeze stops `_setPath` — the write — but a path only reaches `_setPath` after it has
+     been projected and its `d` string built, so a swallowed call is upstream work that was paid
+     and thrown away. Per turn, against the path count, that is the whole question: if they match,
+     the guard is sitting one step too low.
+     Unquantised on purpose: frame medians can only land on multiples of the refresh period, which
+     is why 05/09 could not tell 4x from 6x. Microseconds here are readable. */
+  try {
+    const rc = window._nvRotCost;
+    if (rc && rc.n) {
+      kv('Bearing changes', rc.n + '  (' + (rc.totalMs / 1000).toFixed(1) + ' s synchronous total)');
+      kv('  per turn', 'mean ' + (rc.totalMs / rc.n).toFixed(1) + ' ms, worst ' +
+                       rc.worstMs.toFixed(1) + ' ms');
+      /* Named "skipped writes, work already done" rather than "saved": the saving is the write,
+         the cost is everything that produced the argument to it. The two are easy to confuse and
+         the confusion is exactly what this line exists to prevent. */
+      kv('  paths rebuilt', rc.swallowed.toLocaleString() + ' projected then dropped, worst ' +
+                            rc.worstSwallowed + ' in one turn');
+    } else if (rc) {
+      kv('Bearing changes', 'none this session');
+    }
+  } catch (_) { kv('Bearing changes', 'unavailable'); }
   /* The WFS refresh cycle — the wait between a gesture and a complete map, and the number the
      "too many layers" notice is thresholded on. Reported next to the frame times because the two
      answer different questions: the frame probe says whether drawing is smooth, this says how long
@@ -1163,7 +1253,16 @@ async function buildDiagReport() {
     if (c) {
       kv('WFS refresh cycle', (c.ms / 1000).toFixed(1) + ' s  (' + c.layers + ' layers, ' +
                               c.features.toLocaleString() + ' features' + share(c) + ')');
-      if (cw && cw !== c) {
+      /* ⚠ An OPEN cycle competes for "worst", and until now it could not win: only completed
+         cycles were ever compared, so a report could print "Worst cycle 8.7 s" on a session that
+         had a 42.3 s cycle hanging at that very moment — the worst cycle of the session, excluded
+         for the sole reason that it had not finished. The longest wait is a wait whether or not it
+         ever ends, and the one that never ends is the one worth reporting. */
+      const openMs = openSince ? (Date.now() - openSince) : 0;
+      if (openMs > (cw ? cw.ms : 0) && openMs > c.ms) {
+        kv('Worst cycle', (openMs / 1000).toFixed(1) + ' s  (STILL OPEN — longer than any ' +
+                          'completed cycle this session)');
+      } else if (cw && cw !== c) {
         kv('Worst cycle', (cw.ms / 1000).toFixed(1) + ' s  (' + cw.layers + ' layers, ' +
                           cw.features.toLocaleString() + ' features' + share(cw) + ')');
       }
@@ -1200,7 +1299,13 @@ async function buildDiagReport() {
       _tmp.innerHTML = o.attribution;
       const clean = (_tmp.textContent || '').replace(/\s+/g, ' ').trim();
       if (!clean) return;
+      /* Tagged when the string is a provider CREDIT rather than a name the app gave the layer.
+         Both are legitimate entries — a basemap with no name of its own can only be identified by
+         its credit, which is why these are not dropped — but without the tag a reader counts
+         "© OpenStreetMap contributors" as an overlay and the layer total reads one too high. */
+      const isCredit = /^©|\bcontributors\b|^\(c\)/i.test(clean);
       layers.push((clean.length > 70 ? clean.slice(0, 70) + '…' : clean) +
+                  (isCredit ? ' [basemap credit]' : '') +
                   (o.crsCode ? ' [' + o.crsCode + ']' : '') +
                   (o.opacity !== undefined && o.opacity !== 1 ? ' (opacity ' + o.opacity + ')' : ''));
     });

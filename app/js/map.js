@@ -17,9 +17,7 @@ const BASEMAPS = {
   }),
   /* Stadia (alidade_satellite) removed: production use requires an API key.
      Satellite coverage is served by esri_sat below, online-only. */
-  google_maps: L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>', maxZoom: 20
-  }),
+  /* CARTO removed 2026-09-08: its tiles require an API key. Street map: osm_std above. */
   esri_sat: L.tileLayer('https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     attribution: 'Esri, Maxar, Earthstar Geographics, and the GIS User Community', maxZoom: 20
   }),
@@ -1738,15 +1736,52 @@ function _setBearingIfVisible(b) {
    THEN paste the rest on top — I get the impression you redraw EVERYTHING at every angle". */
 let _rotFreeze = false;
 let _rotThawTid = null;
+let _rotSwallowed = 0;                  // _setPath calls the freeze skipped — see the probe below
 
 (function _patchPathWriteDuringRotation() {
   if (!L.SVG || !L.SVG.prototype || L.SVG.prototype.__nvRotFreeze) return;
   const orig = L.SVG.prototype._setPath;
   L.SVG.prototype._setPath = function (layer, path) {
-    if (_rotFreeze) return;
+    if (_rotFreeze) { _rotSwallowed++; return; }
     return orig.call(this, layer, path);
   };
   L.SVG.prototype.__nvRotFreeze = true;
+})();
+
+/* ===== ROTATION COST PROBE — what the freeze does NOT save =====
+   The freeze intercepts `_setPath`, which is the LAST step of drawing a path. Everything above it
+   still runs on every bearing change: Leaflet projects each layer, walks its rings and builds the
+   `d` STRING through pointsToPath — and then this hands that string to nothing. So the guard saves
+   the DOM write and the string's insertion, never its computation.
+   That was an argument until now; these two numbers make it a measurement.
+   · the SYNCHRONOUS span of setBearing — everything a turn costs before the frame can be drawn,
+     unquantised, so it resolves what a frame median (a multiple of 16.5 ms) cannot;
+   · how many `_setPath` calls were swallowed inside that span — reaching `_setPath` means all the
+     upstream projection and string building for that path already happened. If the count comes
+     back near the path count, the upstream work is being paid in full on every turn, and the
+     remedy is to gate ABOVE `_update`, not at the write.
+   ⚠ Reading, not assuming: a low swallowed count would mean Leaflet is already skipping the paths
+   somewhere above us, and the whole line of enquiry would be wrong. The probe can say so.
+   Cost: two performance.now() and an integer add per setBearing — about 120 calls a second at
+   gesture rate, tens of nanoseconds each. It cannot move what it measures. */
+window._nvRotCost = { n: 0, totalMs: 0, worstMs: 0, swallowed: 0, worstSwallowed: 0 };
+(function _patchSetBearingTiming() {
+  if (!L.Map || !L.Map.prototype || typeof L.Map.prototype.setBearing !== 'function') return;
+  if (L.Map.prototype.__nvRotTimed) return;
+  const orig = L.Map.prototype.setBearing;
+  L.Map.prototype.setBearing = function (theta) {
+    const sw0 = _rotSwallowed, t0 = performance.now();
+    const r = orig.call(this, theta);
+    const ms = performance.now() - t0, sw = _rotSwallowed - sw0;
+    const a = window._nvRotCost;
+    a.n++;
+    a.totalMs += ms;
+    a.swallowed += sw;
+    if (ms > a.worstMs) a.worstMs = ms;
+    if (sw > a.worstSwallowed) a.worstSwallowed = sw;
+    return r;
+  };
+  L.Map.prototype.__nvRotTimed = true;
 })();
 
 /* ===== FRAME PROBE — instrumentation only, nothing acts on it yet =====
@@ -1781,12 +1816,31 @@ let _rotThawTid = null;
    The path count is read once per window, never per frame: querySelectorAll at frame rate would
    be a cost of its own inside the measurement meant to observe it. */
 const _FRAME_PROBE_QUIET_MS    = 400;   // the interaction is over once nothing has arrived for this long
-const _FRAME_PROBE_MIN_SAMPLES = 3;     // fewer frames than this is not a median, it is noise
+/* Raised from 3 on 06/09. Frame intervals are quantised to the refresh period, so a median over
+   three or four samples can only land on a multiple of it: the difference between "4x" and "6x"
+   is one dropped frame out of four. The field reports of 05/09 put exactly such windows in the
+   headline — 233.3 ms over 3 frames, 99.3 ms over 4 — while the informative windows of 11 to 19
+   frames sat further down the log. Eight is the point where the median stops being one sample. */
+const _FRAME_PROBE_MIN_SAMPLES = 8;
 const _FRAME_PROBE_BASE_KEY    = 'nv_frame_base';
 const _FRAME_PROBE_LOG_RATIO   = 2;     // below this a window is unremarkable; logging it would drown the log
+/* One coupled cache reading per this interval, at most. Track-up navigation opens a frame window
+   per GPS fix, and a probe on each would be four cache lookups a second — the measurement would
+   become a load of its own. */
+const _FRAME_PROBE_COUPLE_MS   = 15000;
+const _FRAME_HIST_MAX          = 400;   // intervals kept for the refresh-rate estimate
+/* Thresholds that turn a window into a CLASS. Deliberately coarse: they exist to tell a gesture
+   apart from the noise floor of a still map, not to measure anything. 8 px is below what a finger
+   does and above what a GPS follow-pan does when the rider is stopped. */
+const _FRAME_MOVE_MIN_PX = 8, _FRAME_ROT_MIN_DEG = 2, _FRAME_ZOOM_MIN = 0.05;
 let _frameProbeOn = false, _frameProbeSamples = [], _frameProbeLastFrame = 0;
 let _frameProbeActivityAt = 0;          // own timestamp: _rotLastRotateAt belongs to the toast quiet window
 let _frameProbeCauses = null;           // Set of the interactions this window saw
+let _frameProbeOpenedAt = 0;            // wall clock, to tell whether a coupled reading belongs to this window
+let _frameProbeView = null;             // the view as the window opened, for the measured deltas
+let _frameHist = [];                    // every interval this session — the refresh-rate estimate reads this
+let _coupledCache = null;               // {startedAt, ms} of the cache reading taken DURING a window
+let _coupledLastAt = 0;
 
 /* Opened by every interaction that makes the map render. Track-up navigation pans on each GPS
    fix, so windows follow one another closely while navigating — that is intended: those frames
@@ -1802,7 +1856,97 @@ function _frameProbeStart(cause) {
   _frameProbeOn = true;
   _frameProbeLastFrame = 0;
   _frameProbeCauses = new Set([cause]);
+  _frameProbeOpenedAt = Date.now();
+  _frameProbeView = _frameViewNow();
+  _coupleCacheProbe();
   requestAnimationFrame(_frameProbeFrame);
+}
+
+function _frameViewNow() {
+  try {
+    return { bearing: (typeof map.getBearing === 'function') ? map.getBearing() : 0,
+             zoom: map.getZoom(), c: map.getCenter() };
+  } catch (_) { return null; }
+}
+
+/* ⚠ The event NAMES cannot answer "what did this gesture do", and the 05/09 field reports are the
+   proof: not one window in six sessions was labelled a plain rotation, because setBearing changes
+   the view and Leaflet fires 'move' for it — so every turn reads 'move+rotate', and a turn made
+   while pinching reads the same as a pinch made while turning. Whether the map actually TURNED,
+   PANNED or ZOOMED is a question about the view, so it is asked of the view.
+   The centre distance is projected at the CLOSING zoom, so a zoom does not also read as a pan,
+   and rotating about the centre leaves it at zero — which is what makes a pure rotation, the
+   sample that was missing, a category that can exist at all. */
+function _frameDeltas(a, b) {
+  if (!a || !b) return null;
+  const dB = Math.abs(((b.bearing - a.bearing + 540) % 360) - 180);
+  const dZ = Math.abs(b.zoom - a.zoom);
+  let dPx = 0;
+  try { dPx = map.project(a.c, b.zoom).distanceTo(map.project(b.c, b.zoom)); } catch (_) {}
+  return { dB, dZ, dPx };
+}
+
+function _measuredCause(d) {
+  if (!d) return 'unknown';
+  const p = [];
+  if (d.dPx >= _FRAME_MOVE_MIN_PX)  p.push('pan');
+  if (d.dB  >= _FRAME_ROT_MIN_DEG)  p.push('rot');
+  if (d.dZ  >= _FRAME_ZOOM_MIN)     p.push('zoom');
+  // 'still' is a real answer: frames were drawn while the view did not change — a layer building,
+  // a tile arriving. Folding it into 'pan' would hide exactly that.
+  return p.length ? p.join('+') : 'still';
+}
+
+/* The refresh period, ESTIMATED FROM THE SAMPLES rather than assumed to be 16.7 ms: a frame
+   interval cannot be shorter than the display's period, so the bottom of the distribution sits on
+   it. The 10th percentile rather than the minimum, because a single anomalous sub-frame reading is
+   exactly what poisoned the stored baseline on this device (14.6 ms recorded against a ~16.5 ms
+   panel — a value no real frame can have), and a minimum has no defence against it. */
+/* ⚠ Cached, and this is not premature: a copy-and-sort of 400 numbers on EVERY window would be
+   the largest thing this probe does, on a path that runs about once a second under GPS follow —
+   an instrument that costs more than what it measures. The estimate moves only as the
+   distribution fills, so recomputing every 25 new intervals gives the same answer. */
+/* ⚠ PLAUSIBILITY BOUNDS, and they are not decoration — without them this made things worse.
+   The estimate rests on one assumption: that somewhere in the session the app drew a frame at full
+   speed, so the bottom of the distribution sits on the display's period. When that is false the
+   percentile is just the fastest SLOW frame, and using it as a floor CORRUPTS the baseline.
+   Field session 06/09 11:45: eleven minutes on a near-empty map with the network stalled, never
+   one full-speed frame, estimate 30.6 ms — 32 Hz, a display that does not exist — and the floor
+   RAISED a correct 16.5 ms baseline to it, understating every ratio in that report by 1.85x.
+   Phone panels run at 60, 90 or 120 Hz = 16.7, 11.1, 8.3 ms. Outside this range the number is not
+   a refresh period, and the honest answer is NO estimate: NaN touches nothing, leaves the stored
+   baseline alone, and the report says so instead of printing a fiction. */
+const _VSYNC_MIN_MS = 6, _VSYNC_MAX_MS = 18;
+let _vsyncVal = NaN, _vsyncAtLen = -1;
+function _vsyncEstimate() {
+  if (_frameHist.length < 40) return NaN;
+  if (_vsyncAtLen >= 0 && _frameHist.length - _vsyncAtLen < 25) return _vsyncVal;
+  const s = _frameHist.slice().sort((a, b) => a - b);
+  const p10 = s[Math.floor(s.length * 0.10)];
+  _vsyncVal = (p10 >= _VSYNC_MIN_MS && p10 <= _VSYNC_MAX_MS) ? p10 : NaN;
+  _vsyncAtLen = _frameHist.length;
+  return _vsyncVal;
+}
+
+/* Reads the cache channel DURING a frame window, so the two are sampled in the same instant.
+   That pairing is the whole point: the 05/09 reports had the frame channel at 3-14x and the cache
+   channel at 1.2-2.7x, but never at the same moment, so they could not be compared. If both rise
+   together the machine is busy; if only the frame channel rises, the app's own main thread is.
+   ⚠ Goes through _nvCacheProbe (probeMedian), which does NOT write the stored cache baseline —
+   only the slow-check does. So sampling more often cannot move the baseline the ratio is read
+   against. */
+function _coupleCacheProbe() {
+  if (typeof window._nvCacheProbe !== 'function') return;
+  const now = Date.now();
+  if (now - _coupledLastAt < _FRAME_PROBE_COUPLE_MS) return;
+  _coupledLastAt = now;
+  const rec = { startedAt: now, ms: null };
+  _coupledCache = rec;
+  try {
+    Promise.resolve(window._nvCacheProbe())
+      .then(ms => { rec.ms = (ms == null) ? null : ms; })
+      .catch(() => {});
+  } catch (_) {}
 }
 
 function _frameProbeFrame(now) {
@@ -1823,6 +1967,16 @@ function _frameProbeEnd() {
   _frameProbeSamples = [];
   _frameProbeLastFrame = 0;
   _frameProbeCauses = null;
+  /* Fed BEFORE the short-window return, deliberately: a three-frame window is not a median worth
+     publishing, but its intervals are real frames and the refresh-rate estimate wants every one
+     it can get — most windows on a still-ish map are short. */
+  for (let i = 0; i < s.length; i++) _frameHist.push(s[i]);
+  /* Trimmed in batches, not on every overflow: slicing at exactly the cap allocates a fresh
+     400-element array once per window for ever. With a margin it happens once per 64 windows. */
+  if (_frameHist.length > _FRAME_HIST_MAX + 64) {
+    _frameHist = _frameHist.slice(-_FRAME_HIST_MAX);
+    if (_vsyncAtLen > _frameHist.length) _vsyncAtLen = -1;   // the cache's length marker moved
+  }
   if (s.length < _FRAME_PROBE_MIN_SAMPLES) return;
   s.sort((a, b) => a - b);
   /* A real median on both parities. s[len>>1] alone takes the upper of the two middle values on
@@ -1833,10 +1987,26 @@ function _frameProbeEnd() {
   /* Best ever, not a rolling average: the baseline has to describe what this device can do when
      nothing is in the way, and an average would drift upward on exactly the slow sessions the
      ratio is supposed to expose. */
+  /* ⚠ A pure minimum can only ever fall, and one impossible sample poisons it for the life of the
+     install: a stored baseline reached 14.6 ms on a panel whose own frames arrive ~16.5 ms
+     apart, which inflated every ratio it ever reported. So the minimum is floored at the
+     measured refresh period, and — this is the half that matters — a baseline already below it
+     is RAISED back to it. That is the only path by which a poisoned baseline can recover. */
   let base = parseFloat(localStorage.getItem(_FRAME_PROBE_BASE_KEY));
-  if (!isFinite(base) || med < base) {
-    base = med;
+  const vsync = _vsyncEstimate();
+  let next = base;
+  if (!isFinite(next) || med < next) next = med;
+  if (isFinite(vsync) && (!isFinite(next) || next < vsync * 0.95)) next = vsync;
+  /* ⚠ Written only on a MATERIAL change. `next !== base` on floats would persist a drift of a
+     hundredth of a millisecond, and localStorage.setItem is synchronous — on this device that is
+     a main-thread write once per window, about once a second under GPS follow, inside the very
+     probe that exists to detect main-thread stalls. The baseline is used at one decimal place, so
+     anything under 1% cannot change a printed number. */
+  if (!isFinite(base) || Math.abs(next - base) / (base || 1) >= 0.01) {
+    base = next;
     try { localStorage.setItem(_FRAME_PROBE_BASE_KEY, String(base)); } catch (_) {}
+  } else {
+    base = isFinite(base) ? base : next;
   }
   /* Counted across the WHOLE map container, not `.leaflet-overlay-pane`. The first version used
      that selector and the field report came back with "Vector paths 1" on thirteen WFS layers
@@ -1855,18 +2025,51 @@ function _frameProbeEnd() {
     markers = box.querySelectorAll('.leaflet-marker-icon').length;
   } catch (_) {}
   const ratio = med / (base || 1);
-  window._nvLastFrame = { ms: med, frames: s.length, paths, markers, cause, ratio };
+  const d = _frameDeltas(_frameProbeView, _frameViewNow());
+  const measured = _measuredCause(d);
+  /* The coupled cache reading counts only if it was STARTED inside this window. One taken before
+     the window opened describes a machine that may since have got busy, which is the confusion
+     the pairing exists to remove. Null when the probe has not resolved yet — reported as
+     "in flight", never as a zero. */
+  let cacheMs = null, cacheRatio = NaN;
+  if (_coupledCache && _coupledCache.startedAt >= _frameProbeOpenedAt) {
+    cacheMs = _coupledCache.ms;
+    if (cacheMs != null) {
+      const cb = parseFloat(localStorage.getItem(window._nvCacheProbeBaseKey || 'nv_cache_probe_base'));
+      if (isFinite(cb) && cb > 0) cacheRatio = cacheMs / cb;
+    }
+  }
+  window._nvLastFrame = { ms: med, frames: s.length, paths, markers, cause, measured,
+                          dB: d ? d.dB : null, dZ: d ? d.dZ : null, dPx: d ? d.dPx : null,
+                          ratio, cacheMs, cacheRatio, vsync };
   /* The worst window of the session is kept beside the last one, because the report is saved
      minutes after the trouble: by then the last window is usually the menu opening, and the
-     slow one the user actually wanted to report is gone. */
+     slow one the user actually wanted to report is gone.
+     It no longer picks up the warm-up spike that topped the 05/09 reports (233.3 ms over three
+     frames on a map holding nine paths): a window that short does not reach here any more. */
   const w = window._nvWorstFrame;
   if (!w || ratio > w.ratio) window._nvWorstFrame = window._nvLastFrame;
+  /* Kept PER MEASURED CLASS and across the whole session, because the question the field asks is
+     comparative — does turning cost more than panning over the same view — and one headline
+     number from whichever window happened to be last cannot answer it. On 05/09 that comparison
+     had to be reconstructed by hand out of the event log. */
+  const by = window._nvFrameByCause || (window._nvFrameByCause = {});
+  const e = by[measured] || (by[measured] = { n: 0, ms: [], worst: 0 });
+  e.n++;
+  e.ms.push(med);
+  if (e.ms.length > 60) e.ms.shift();
+  if (ratio > e.worst) e.worst = ratio;
   /* Logged only when a window stands out. Navigation opens one per GPS fix, and logging each
      would push everything else out of the report the log exists to fill. */
   if (typeof nvLog === 'function' && ratio >= _FRAME_PROBE_LOG_RATIO) {
-    nvLog('frame probe', cause, med.toFixed(1) + 'ms', 'baseline', base.toFixed(1) + 'ms',
+    nvLog('frame probe', cause, '[' + measured + ']', med.toFixed(1) + 'ms',
+          'baseline', base.toFixed(1) + 'ms',
           'ratio', ratio.toFixed(1) + 'x', 'frames', s.length,
-          'paths', paths, 'markers', markers, 'bearing', Math.round(map.getBearing ? map.getBearing() : 0));
+          'paths', paths, 'markers', markers,
+          'dbearing', d ? d.dB.toFixed(0) : '?', 'dzoom', d ? d.dZ.toFixed(2) : '?',
+          'dpan', d ? Math.round(d.dPx) + 'px' : '?',
+          'cache', cacheMs == null ? 'none' : (cacheMs.toFixed(1) + 'ms ' +
+                   (isFinite(cacheRatio) ? cacheRatio.toFixed(1) + 'x' : '?')));
   }
 }
 window._nvFrameProbeBaseKey = _FRAME_PROBE_BASE_KEY;
@@ -2688,7 +2891,13 @@ function _wfsNotice(took, open) {
   /* ⚠ "Background maps are not the problem" is dropped on the starved branch, and deliberately:
      it is true of the CPU and false of the pipe, where tile requests compete for the same
      bandwidth as the overlays. Same for the rotation line — nothing is being redrawn while
-     nothing is arriving. */
+     nothing is arriving.
+     On the parse branch it is qualified instead of dropped, and only when the map is turned:
+     a satellite basemap does cost more to redraw in rotation than a plain one (field
+     observation, 2026-09-06), which is the single case where the flat claim is false. At
+     locked north it stays as it was, because there it is simply true. The test is the
+     _mapIsTurned() the message already makes two paragraphs above, so the qualification costs
+     nothing to decide. */
   /* Italian, unlike the code and the comments around it: the GISCatasto interface is in Italian,
      and this string is one the user reads. */
   const body = _starved
@@ -2717,7 +2926,10 @@ function _wfsNotice(took, open) {
         ? 'La mappa è anche ruotata. Se non ti serve così, tocca la bussola per bloccarla a nord: ' +
           'con questo numero di geometrie ogni rotazione le ridisegna tutte.\n\n'
         : '') +
-      'Le mappe di sfondo non sono il problema: puoi lasciarle accese.';
+      (_mapIsTurned()
+        ? 'Le mappe di sfondo sono raramente il problema, ma una satellitare pesa di più da ' +
+          'ridisegnare con la mappa ruotata.'
+        : 'Le mappe di sfondo non sono il problema: puoi lasciarle accese.');
 
   setTimeout(() => {
     const shown = Date.now();

@@ -86,7 +86,7 @@ Le altre librerie di terze parti sono MIT, BSD-2 o Apache-2.0: vedi [NOTICES](NO
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 I dati catastali sono dell'Agenzia delle Entrate; le mappe di base provengono da OpenStreetMap,
-OpenTopoMap, CARTO, Esri e dal Geoportale Nazionale, ciascuna secondo le proprie condizioni.
+OpenTopoMap, Esri e dal Geoportale Nazionale, ciascuna secondo le proprie condizioni.
 
 ## Segnalazioni
 

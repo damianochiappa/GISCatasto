@@ -504,6 +504,79 @@ document.getElementById('cfg-file-input').addEventListener('change', function() 
 
 _loadSavedConfig();
 
+/* ===== RETIRED BASEMAPS =====
+   Two separate jobs, both consequences of a provider closing its free tier. Order matters:
+   the purge runs before _restoreSavedBasemap() below, so a basemap that is about to be
+   deleted is never restored first and then taken away under the user. */
+
+/* The basemap list is static HTML, so a row can outlive the layer it selects. When that
+   happens the row points at an id that no longer exists — switchBasemap() early-outs on it,
+   so the tap would do nothing at all and the radio would stay on a map that is not drawn.
+   Dropping the row says the truth instead. Runs before the bundled config lands, whose rows
+   are created by _addBasemapUI as they are imported. */
+function _pruneMissingBasemapRows() {
+  try {
+    document.querySelectorAll('#basemap-list input[name="basemap"]').forEach(inp => {
+      if (BASEMAPS[inp.value]) return;
+      const label = inp.closest('label');
+      if (label) label.remove();
+    });
+  } catch(_) {}
+}
+_pruneMissingBasemapRows();
+
+/* The three bundled CARTO basemaps now require an API key, so they are gone from
+   giscatasto-config.json. That alone only cleans a fresh install: on an existing one those
+   entries were saved into the config at the first launch and would stay for good. This
+   removes them once.
+   Three things it deliberately does NOT do:
+   - it never touches an entry with offline:true. _registerLayer stores a downloaded map as a
+     SEPARATE config beside the one it came from, holding the SAME tile url, so matching on
+     url alone would delete tiles the user actually has and orphan the cache behind them;
+   - it runs once and remembers it (_RETIRED_KEY), so a user who deliberately adds a CARTO map
+     back by hand is not fighting the app at every launch;
+   - it does not filter imports. A config file the user restores may still carry these maps;
+     how they draw is visible on the map, and second-guessing an explicit restore is worse
+     than that.
+   The signature also goes into the removed-defaults list, the same way a manual deletion is
+   remembered, so nothing on the bundled path can put them back. */
+const _RETIRED_KEY  = 'giscatasto_retired_basemaps_v1';
+const _RETIRED_URLS = [
+  'https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png',
+  'https://cartodb-basemaps-a.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png',
+  'https://cartodb-basemaps-a.global.ssl.fastly.net/rastertiles/voyager/{z}/{x}/{y}.png'
+];
+function _purgeRetiredBasemaps() {
+  try { if (localStorage.getItem(_RETIRED_KEY)) return 0; } catch(_) {}
+  let n = 0;
+  try {
+    for (let i = customMapConfigs.length - 1; i >= 0; i--) {
+      const c = customMapConfigs[i];
+      if (!c || c.offline || _RETIRED_URLS.indexOf(c.url) < 0) continue;
+      // Defensive: at boot the current basemap is still the default, but this must hold if
+      // the purge is ever called later.
+      if (typeof currentBasemapId !== 'undefined' && currentBasemapId === c.id) {
+        try { switchBasemap('osm_std'); } catch(_) {}
+        const def = document.querySelector('#basemap-list input[name="basemap"][value="osm_std"]');
+        if (def) def.checked = true;
+      }
+      const entry = BASEMAPS[c.id];
+      if (entry && !entry._needsCreds) { try { map.removeLayer(entry); } catch(_) {} }
+      delete BASEMAPS[c.id];
+      _addRemovedDefault(_sigOf(c));
+      customMapConfigs.splice(i, 1);
+      const inp = document.querySelector('#basemap-list input[name="basemap"][value="' + c.id + '"]');
+      const label = inp && inp.closest('label');
+      if (label) label.remove();
+      n++;
+    }
+    if (n) _autoSaveConfig();
+  } catch(_) {}
+  try { localStorage.setItem(_RETIRED_KEY, '1'); } catch(_) {}
+  return n;
+}
+_purgeRetiredBasemaps();
+
 /* ===== SSL EXCEPTION LISTENER ===== */
 document.addEventListener('deviceready', () => {
   if (typeof cordova === 'undefined') return;

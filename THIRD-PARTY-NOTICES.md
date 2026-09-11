@@ -79,8 +79,13 @@ GISCatasto includes the following open-source libraries. Their licenses are repr
 - Terrain elevation derived from the [Copernicus DEM](https://spacedata.copernicus.eu/) (ESA / European Union)
 - https://open-meteo.com/
 
-## Default tile providers (public distribution)
-- **Satellite Hybrid** layer (`google_hybrid` key): [Stadia Maps](https://stadiamaps.com) "alidade_satellite"
-- **Street Map** layer (`google_maps` key): [CartoDB Voyager](https://carto.com/basemaps/) — free for non-commercial use, attribution required
+## Map and data sources
 
-The `google_*` keys are historical identifiers; the public build does **not** use Google Maps tiles. Users can locally override these via `app/js/basemaps-private.js` (excluded from the repo via `.gitignore`).
+- **Agenzia delle Entrate** — cadastral mapping (INSPIRE WMS/WFS), public data under the service terms
+- **Geoportale Nazionale (PCN)** — administrative boundaries and the AGEA 2012 orthophoto, Ministry of the Environment and Energy Security, public data
+- **OpenStreetMap** — base map, address search and routing; © OpenStreetMap contributors, ODbL
+- **OpenTopoMap** — topographic map, CC BY-SA
+- **Esri and the ArcGIS Online providers** — satellite and thematic maps, under the Esri terms
+- **Italian regions** — regional technical maps (CTR), open data of the respective geoportals
+
+The same list, with the links each provider asks for, is in the app under **Info → Attribuzioni e licenze**.

@@ -126,7 +126,7 @@ loro indirizzi ufficiali. Le stesse fonti, con i link, sono nell'app in Info →
 - **Agenzia delle Entrate** — [consultazione cartografia catastale (WMS/WFS INSPIRE)](https://www.agenziaentrate.gov.it/portale/it/web/guest/schede/fabbricatiterreni/consultazione-cartografia-catastale/servizio-consultazione-cartografia) · [Geoportale Cartografico Catastale](https://geoportale.cartografia.agenziaentrate.gov.it/)
 - **[Geoportale Nazionale](https://gn.mase.gov.it/portale/)** — Ministero dell'Ambiente e della Sicurezza Energetica: ortofoto AGEA e limiti amministrativi
 - **Geoportali regionali** (CTR) — [Friuli-Venezia Giulia](https://irdat.regione.fvg.it/) · [Lazio](https://geoportale.regione.lazio.it/) · [Liguria](https://geoportal.regione.liguria.it/) · [Puglia](https://pugliacon.regione.puglia.it/web/sit-puglia-sit) · [Sardegna](https://www.sardegnageoportale.it/) · [Sicilia](https://www.sitr.regione.sicilia.it/) · [Toscana](https://www.regione.toscana.it/-/geoscopio)
-- **Mappe di base e servizi** — [OpenStreetMap](https://www.openstreetmap.org/copyright) · [OpenTopoMap](https://opentopomap.org/about) · [CARTO](https://carto.com/attributions) · [Esri](https://www.esri.com/en-us/legal/terms/full-master-agreement) · [Open-Meteo](https://open-meteo.com/)
+- **Mappe di base e servizi** — [OpenStreetMap](https://www.openstreetmap.org/copyright) · [OpenTopoMap](https://opentopomap.org/about) · [Esri](https://www.esri.com/en-us/legal/terms/full-master-agreement) · [Open-Meteo](https://open-meteo.com/)
 
 ---
 
