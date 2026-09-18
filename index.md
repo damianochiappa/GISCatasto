@@ -128,6 +128,9 @@ loro indirizzi ufficiali. Le stesse fonti, con i link, sono nell'app in Info →
 - **Geoportali regionali** (CTR) — [Friuli-Venezia Giulia](https://irdat.regione.fvg.it/) · [Lazio](https://geoportale.regione.lazio.it/) · [Liguria](https://geoportal.regione.liguria.it/) · [Puglia](https://pugliacon.regione.puglia.it/web/sit-puglia-sit) · [Sardegna](https://www.sardegnageoportale.it/) · [Sicilia](https://www.sitr.regione.sicilia.it/) · [Toscana](https://www.regione.toscana.it/-/geoscopio)
 - **Mappe di base e servizi** — [OpenStreetMap](https://www.openstreetmap.org/copyright) · [OpenTopoMap](https://opentopomap.org/about) · [Esri](https://www.esri.com/en-us/legal/terms/full-master-agreement) · [Open-Meteo](https://open-meteo.com/)
 
+GISCatasto è elencata fra le applicazioni che riusano questi dati nel catalogo nazionale
+[dati.gov.it](https://www.dati.gov.it/node/501).
+
 ---
 
 ## Licenza e sorgenti
@@ -147,6 +150,9 @@ disponibile pubblicamente, come la licenza richiede.
   "applicationSubCategory": "GIS",
   "description": "App Android per consultare la cartografia catastale italiana sul campo: particelle e fogli dai servizi INSPIRE dell'Agenzia delle Entrate, ricerca per comune, foglio e particella, mappe salvabili per l'uso senza connessione, export KML.",
   "url": "https://damianochiappa.github.io/GISCatasto/",
+  "sameAs": [
+    "https://www.dati.gov.it/node/501"
+  ],
   "license": "https://www.gnu.org/licenses/gpl-3.0",
   "author": {
     "@type": "Person",
