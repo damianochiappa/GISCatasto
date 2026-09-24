@@ -242,6 +242,11 @@ map.on(L.Draw.Event.CREATED, e => {
   toastMsg('Forma aggiunta e salvata', 'success');
 });
 map.on(L.Draw.Event.EDITED, e => {
+  /* The KML vertex editor saves through the same Leaflet.draw handler, which fires this on the
+     MAP: a KML edit announced "Forme modificate e salvate" about drawings nobody touched and put
+     the KML's figures into the drawings' readout. _saveKmlEdit reports its own outcome, and the
+     flag is still set at this point — it is cleared after handler.save() returns. */
+  if (typeof _kmlEditActive !== 'undefined' && _kmlEditActive) return;
   // The event carries what was reshaped, so the readout can follow the new geometry instead
   // of keeping the figures the shape had before the edit.
   const _edited = (e.layers && e.layers.getLayers) ? e.layers.getLayers()[0] : null;

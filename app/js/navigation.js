@@ -156,7 +156,7 @@
     if (navDestMarker) map.removeLayer(navDestMarker);
     navDestMarker = L.circleMarker([lat, lon], {
       radius: 10, color: '#e05252', fillColor: '#e05252', fillOpacity: 0.85, weight: 2
-    }).addTo(map).bindPopup('<b>Destination</b><br>' + label);
+    }).addTo(map).bindPopup('<b>Destination</b><br>' + _xmlEsc(label));   // label may come from the geocoder
     _setStatus('Destinazione impostata: premi Avvia', 'var(--accent)');
   }
 

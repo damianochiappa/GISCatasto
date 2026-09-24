@@ -575,7 +575,7 @@
       if (label) {
         try {
           const center = layer.getBounds ? layer.getBounds().getCenter() : null;
-          layer.bindTooltip(label, { permanent:true, className:'sel-label', direction:'center', sticky:false, offset:[0,0] });
+          layer.bindTooltip(_xmlEsc(label), { permanent:true, className:'sel-label', direction:'center', sticky:false, offset:[0,0] });
           if (center) layer.openTooltip(center);
         } catch(_) {}
       }

@@ -367,11 +367,12 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
   if (opts.isWfs) item.dataset.isWfs = '1';
   if (opts.legacyAbove) item.dataset.legacyAbove = '1';   // pre-zOrder store, read once at migration
   if (opts.zOrder !== undefined && opts.zOrder !== null) item.dataset.zOrder = opts.zOrder;
+  // Name, colour and opacity can come from a file or a configuration: escaped into the markup.
   item.innerHTML = `
     <span class="layer-drag" title="Trascina per riordinare">\u22EE</span>
     <input type="checkbox" ${initVisible ? 'checked' : ''} title="Mostra/nascondi">
-    <span class="layer-name" title="${name} (doppio tocco per rinominare)">${name}</span>
-    ${isRaster ? '' : `<input type="color" class="layer-color" value="${initColor}" title="Colore del layer" list="app-colors">`}
+    <span class="layer-name" title="${_xmlEsc(name)} (doppio tocco per rinominare)">${_xmlEsc(name)}</span>
+    ${isRaster ? '' : `<input type="color" class="layer-color" value="${_xmlEsc(initColor)}" title="Colore del layer" list="app-colors">`}
     ${isRaster ? '' : `<button class="layer-hollow${initHollow ? ' active' : ''}" title="Vuoto (bucato) — senza riempimento">\u2205</button>`}
     ${isRaster ? '' : '<button class="layer-zoom" title="Zoom sul layer">\u29C6</button>'}
     ${opts.isWfs ? '<button class="layer-find" title="Trova le geometrie filtrate (ovunque, non solo nella vista)">\u2316</button>' : ''}
@@ -381,8 +382,8 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
     <button class="layer-del"  title="Rimuovi">\u2715</button>
     <div class="layer-opacity-row">
       <span>\u03B1</span>
-      <input type="range" class="layer-opacity" min="0" max="100" value="${initOpacity}" title="Opacità">
-      <span class="layer-opacity-val">${initOpacity}%</span>
+      <input type="range" class="layer-opacity" min="0" max="100" value="${_xmlEsc(initOpacity)}" title="Opacità">
+      <span class="layer-opacity-val">${_xmlEsc(initOpacity)}%</span>
     </div>`;
   const colorEl = item.querySelector('.layer-color');
   if (colorEl) colorEl.addEventListener('input', e => {
@@ -533,6 +534,24 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
 }
 
 /* ===== KML ENHANCE ===== */
+/* L.KML binds its own placemark popup, which a MultiGeometry group keeps (enhanceKMLSublayer only
+   replaces it on the leaves). Same body as the vendored method, with the name escaped (text in
+   KML) and the description passed through nvSafeHtml. */
+/* A static of L.KML, not a prototype method: the parser calls it as this.addPlacePopup with
+   `this` being L.KML itself. */
+if (typeof L !== 'undefined' && L.KML && typeof L.KML.addPlacePopup === 'function') {
+  L.KML.addPlacePopup = function (place, layer) {
+    let el, i, j, name, descr = '';
+    el = place.getElementsByTagName('name');
+    if (el.length && el[0].childNodes.length) name = el[0].childNodes[0].nodeValue;
+    el = place.getElementsByTagName('description');
+    for (i = 0; i < el.length; i++) {
+      for (j = 0; j < el[i].childNodes.length; j++) descr = descr + el[i].childNodes[j].nodeValue;
+    }
+    if (name) layer.bindPopup('<h2>' + _xmlEsc(name) + '</h2>' + nvSafeHtml(descr), { className: 'kml-popup' });
+  };
+}
+
 function enhanceKMLLayer(kmlLayer, propsArray, kmlDoc) {
   if (typeof kmlLayer.eachLayer !== 'function') return;
   if (propsArray && propsArray.length) {
@@ -589,8 +608,10 @@ function enhanceKMLSublayer(layer) {
       propsDiv.style.cssText = 'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)';
       const rows = _visible
         .map(([k,v]) => {
-          const val = k === 'description' ? stripGeomDescription(v) : (v ?? '');
-          return `<tr><td style="opacity:.65;padding-right:8px;font-size:11px;font-family:monospace;white-space:nowrap">${k}</td><td style="font-size:11px;font-family:monospace">${val}</td></tr>`;
+          // From the file: <name> is text in KML and is escaped, the rest goes through nvSafeHtml.
+          const val = k === 'description' ? nvSafeHtml(stripGeomDescription(v))
+                    : k === 'name' ? _xmlEsc(v ?? '') : nvSafeHtml(v ?? '');
+          return `<tr><td style="opacity:.65;padding-right:8px;font-size:11px;font-family:monospace;white-space:nowrap">${_xmlEsc(k)}</td><td style="font-size:11px;font-family:monospace">${val}</td></tr>`;
         })
         .join('');
       const tbl = document.createElement('table');
@@ -600,7 +621,7 @@ function enhanceKMLSublayer(layer) {
       div.appendChild(propsDiv);
     } else if (existingHTML) {
       const info = document.createElement('div');
-      info.innerHTML = stripGeomDescription(existingHTML);
+      info.innerHTML = nvSafeHtml(stripGeomDescription(existingHTML));
       info.style.cssText = 'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border);font-size:12px';
       div.appendChild(info);
     }
@@ -724,7 +745,11 @@ function _idbPut(id, content) {
 }
 
 /* Write a file's content to IndexedDB, falling back to inline localStorage when that is
-   not possible — which is exactly the pre-IndexedDB behaviour, cap included. */
+   not possible — which is exactly the pre-IndexedDB behaviour, cap included.
+   Resolves true when the content landed in EITHER store, false when it landed nowhere (and the
+   user has already been told). It used to resolve false for the inline fallback too, so a caller
+   could not tell "saved inline" from "not saved" — and _saveKmlEdit, which ignored the value,
+   followed the not-saved error with a "KML salvato" contradicting it. */
 function _writeOverlayContent(storeId, content) {
   return _idbPut(storeId, content).then(okIdb => {
     if (okIdb) return true;
@@ -735,8 +760,9 @@ function _writeOverlayContent(storeId, content) {
     if (!_updateOverlay(storeId, { content })) {
       toastMsg('Layer troppo grande per essere salvato: non sarà ripristinato al riavvio',
                'error', 8000, 'sidebar');
+      return false;
     }
-    return false;
+    return true;
   });
 }
 
@@ -1457,8 +1483,9 @@ function _saveKmlEdit() {
          The write is async now, so confirm only once it has actually landed: announcing
          "saved" before the write completes would claim durability the edit does not yet
          have. The old synchronous path could not report a failed write at all. */
+      // false = stored nowhere, and _writeOverlayContent has already said so in an error toast.
       _writeOverlayContent(storeId, newKmlContent)
-        .then(() => toastMsg('KML salvato', 'success', undefined, 'sidebar'))
+        .then(saved => { if (saved) toastMsg('KML salvato', 'success', undefined, 'sidebar'); })
         .catch(() => toastMsg('KML modificato, ma non salvato in memoria', 'warn', undefined, 'sidebar'));
     } else {
       toastMsg('KML salvato', 'success', undefined, 'sidebar');

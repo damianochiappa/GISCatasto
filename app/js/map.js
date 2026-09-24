@@ -966,7 +966,7 @@ _attachAddressSearch(
     map.flyTo([+lat, +lon], 14);
     if (searchMarker) map.removeLayer(searchMarker);
     searchMarker = L.circleMarker([+lat, +lon], { radius: 8, color: '#4f8ef7', fillColor: '#4f8ef7', fillOpacity: 0.6 })
-      .addTo(map).bindPopup(`<b>${name}</b>`).openPopup();
+      .addTo(map).bindPopup(`<b>${_xmlEsc(name)}</b>`).openPopup();   // name from the geocoder
     toastMsg('Trovato: ' + name.split(',')[0], 'success');
   }
 );
@@ -2206,7 +2206,7 @@ function _showTargetPicker() {
   picker.innerHTML =
     '<span class="wtp-label">Seleziona su:</span>' +
     _wfsRegistry.map(e =>
-      `<button class="wtp-btn" data-type="${e.typeName}">${e.name}</button>`
+      `<button class="wtp-btn" data-type="${_xmlEsc(e.typeName)}">${_xmlEsc(e.name)}</button>`
     ).join('') +
     '<button class="wtp-cancel">Annulla</button>';
   picker.classList.remove('hidden');
@@ -2257,7 +2257,8 @@ function _selToggle(key, layer, baseStyle, label) {
       _selLabels.set(key, label);
       try {
         const _center = layer.getBounds ? layer.getBounds().getCenter() : null;
-        layer.bindTooltip(label, { permanent:true, className:'sel-label', direction:'center', sticky:false, offset:[0,0] });
+        // A tooltip given a string renders it as HTML; the label is a server attribute.
+        layer.bindTooltip(_xmlEsc(label), { permanent:true, className:'sel-label', direction:'center', sticky:false, offset:[0,0] });
         if (_center) layer.openTooltip(_center);
       } catch(_) {}
     }
@@ -3483,7 +3484,7 @@ const _WFSLayer = L.Layer.extend({
               _selLayers.set(key, layer);
               try { layer.setStyle(_SEL_STYLE); } catch(_) {}
               const existingLabel = _selLabels.get(key);
-              if (existingLabel) try { layer.bindTooltip(existingLabel, { permanent:true, className:'sel-label', direction:'auto' }); } catch(_) {}
+              if (existingLabel) try { layer.bindTooltip(_xmlEsc(existingLabel), { permanent:true, className:'sel-label', direction:'auto' }); } catch(_) {}
             }
 
             layer.on('click', () => {
@@ -3512,7 +3513,8 @@ const _WFSLayer = L.Layer.extend({
               const popupEl = document.createElement('div');
               if (p && Object.keys(p).length) {
                 const rows = Object.entries(p).slice(0, 8)
-                  .map(([k,v]) => `<tr><td style="opacity:.65;padding-right:6px">${k}</td><td>${v ?? ''}</td></tr>`)
+                  // Server data: keys escaped, values filtered (see nvSafeHtml in utils.js).
+                  .map(([k,v]) => `<tr><td style="opacity:.65;padding-right:6px">${_xmlEsc(k)}</td><td>${nvSafeHtml(v ?? '')}</td></tr>`)
                   .join('');
                 const tbl = document.createElement('table');
                 tbl.style.cssText = 'font-size:11px;font-family:monospace;margin-bottom:6px';
@@ -3612,6 +3614,8 @@ const _WFSLayer = L.Layer.extend({
 
         const gj = L.geoJSON(null, _gjOpts).addTo(map);
         this._geo = gj;
+        // Takes a drawn set off the map for good; used when the layer itself is gone (see _step).
+        const _retire = g => { if (g) try { map.removeLayer(g); } catch(_) {} return null; };
         let _i = 0;
         const _step = () => {
           /* The same generation check the response already passes through, repeated per chunk:
@@ -3632,7 +3636,13 @@ const _WFSLayer = L.Layer.extend({
              abandons another copy on top of the map. Field diagnostic 2026-09-05: 2016 paths for
              1011 features, then 2616, with the cadastre still on screen after its layer had been
              turned off and its selection cleared. */
-          if (reqId !== this._reqId) { try { map.removeLayer(gj); } catch(_) {} this._geo = prev; _done(); return; }
+          /* ⚠ …but only while the layer is still ON. When the superseding change was the layer
+             being switched off, onRemove could only take down what `this._geo` held at that
+             moment — this half-built `gj` — and `prev` would stay on screen with its checkbox
+             off, clickable, with nothing left that would ever remove it. Leaflet clears `_map`
+             after onRemove, so that is the test; a layer switched off and straight back on has
+             `_map` again and keeps `prev` exactly as above. */
+          if (reqId !== this._reqId) { try { map.removeLayer(gj); } catch(_) {} this._geo = this._map ? prev : _retire(prev); _done(); return; }
           let _nf = 0, _nv = 0;
           while (_i < _feats.length && _nf < _CHUNK_FEATS && _nv < _CHUNK_VERTS) {
             try { gj.addData(_feats[_i]); } catch(_) {}
@@ -3776,11 +3786,17 @@ const _WFSLayer = L.Layer.extend({
          or the guard would treat the failure as a fetched result and never retry it. The latch
          below rations the toast, it must not ration this. */
       this._fetchedBounds = null;
+      /* A failure ends this layer's turn as surely as a success does — EVERY failure, so this
+         runs before the latch as well. It used to sit below it: the first failure of an episode
+         released the queue and every later one returned at the latch still holding it, so the
+         layers behind waited out the 20 s watchdog. Field diagnostic 2026-09-24: "Catasto Fogli"
+         answering <ServiceExceptionReport> twice in a row, "stalled 20.0s", and a slow-cycle
+         notice blaming the parse for a queue that was simply held. */
+      _done();
       if (this._errShown) return;
       this._errShown = true;
       _reportLayerError(this._name(), msg);
       console.warn('[giscatasto] WFS ' + this._name() + ' failed:', msg, '|', this._wfsUrl);
-      _done();   // a failure ends this layer's turn as surely as a success does
     };
 
     /* ⚠ Instrumented on purpose, and the reason is worth keeping. A single 8 s block in the field
@@ -4150,8 +4166,9 @@ function _addBasemapUI(cfg) {
   const label = document.createElement('label');
   label.className = 'basemap-item basemap-item-custom';
   label.innerHTML =
-    `<input type="radio" name="basemap" value="${id}">` +
-    `<span>${name}${cfg.protected ? ' \uD83D\uDD12' : ''}</span>` +
+    // id and name can come from an imported configuration file: escaped into the markup.
+    `<input type="radio" name="basemap" value="${_xmlEsc(id)}">` +
+    `<span>${_xmlEsc(name)}${cfg.protected ? ' \uD83D\uDD12' : ''}</span>` +
     `<button class="bm-del" title="Rimuovi la mappa">\u2715</button>`;
   label.querySelector('input').addEventListener('change', () => switchBasemap(id));
   label.querySelector('.bm-del').addEventListener('click', async ev => {
@@ -4581,7 +4598,10 @@ function _addBasemapUI(cfg) {
       /* Pre-trust WMS hostname so SslPlugin bypasses cert errors silently
          (avoids one dialog per tile overwhelming the UI)                  */
       const _doAddOverlay = () => {
-        toastMsg('Overlay WMS aggiunto: sposta o zooma per caricare l’immagine', 'success');
+        // The same path adds a WFS, which draws features rather than loading an image.
+        toastMsg(cfg.type === 'wfs'
+          ? 'Overlay WFS aggiunto: sposta o zooma per caricare le geometrie'
+          : 'Overlay WMS aggiunto: sposta o zooma per caricare l’immagine', 'success');
         if (typeof addLayerToList === 'function') {
           addLayerToList(layer, name, null, null, {
             isWfs: cfg.type === 'wfs',

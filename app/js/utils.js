@@ -258,6 +258,82 @@ function _xmlEsc(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
+/* ===== MARKUP FROM OUTSIDE THE APP =====
+   Formatting markup coming from imported files and external services (a KML description is HTML
+   by specification) is kept, reduced to plain formatting: tags outside the list are unwrapped so
+   their text survives, a few are dropped whole, only presentational attributes are kept, and URLs
+   are limited to http(s), mailto, in-page anchors and embedded raster images. Parsed in a
+   DOMParser document, which loads nothing while it is inspected.
+   Comments are kept on purpose: stripGeomDescription keys on the <!--geom--> marker to avoid
+   showing the generated readout twice. Text with no '<' in it is returned untouched. */
+const _SAFE_TAGS = new Set(['A','ABBR','B','BIG','BLOCKQUOTE','BR','CAPTION','CENTER','CITE','CODE',
+  'COL','COLGROUP','DD','DEL','DIV','DL','DT','EM','FONT','H1','H2','H3','H4','H5','H6','HR','I',
+  'IMG','INS','KBD','LI','MARK','OL','P','PRE','Q','S','SAMP','SMALL','SPAN','STRIKE','STRONG',
+  'SUB','SUP','TABLE','TBODY','TD','TFOOT','TH','THEAD','TR','TT','U','UL']);
+const _DROP_TAGS = new Set(['SCRIPT','STYLE','IFRAME','FRAME','FRAMESET','OBJECT','EMBED','APPLET',
+  'LINK','META','BASE','FORM','INPUT','BUTTON','TEXTAREA','SELECT','OPTION','TEMPLATE','NOSCRIPT',
+  'SVG','MATH','AUDIO','VIDEO','SOURCE','TRACK','CANVAS','PARAM','DIALOG','PORTAL']);
+const _SAFE_ATTRS = new Set(['href','src','alt','title','width','height','colspan','rowspan','align',
+  'valign','border','cellpadding','cellspacing','style','color','bgcolor','face','size','dir','lang']);
+
+function nvSafeHtml(html) {
+  if (html == null) return '';
+  const s = String(html);
+  if (s.indexOf('<') === -1) return s;
+  let doc;
+  try { doc = new DOMParser().parseFromString('<!doctype html><body>' + s, 'text/html'); }
+  catch (_) { return _xmlEsc(s); }
+  const clean = parent => {
+    for (let n = parent.firstChild; n; ) {
+      const next = n.nextSibling;
+      if (n.nodeType === 1) {
+        const tag = n.nodeName.toUpperCase();
+        if (_DROP_TAGS.has(tag)) { n.remove(); n = next; continue; }
+        clean(n);
+        if (!_SAFE_TAGS.has(tag)) {
+          while (n.firstChild) parent.insertBefore(n.firstChild, n);   // already cleaned above
+          n.remove();
+        } else {
+          Array.from(n.attributes).forEach(a => {
+            const name = a.name.toLowerCase();
+            if (!_SAFE_ATTRS.has(name)) { n.removeAttribute(a.name); return; }
+            if (name === 'href' || name === 'src') {
+              // Control characters and spaces are ignored by URL parsers — "java\tscript:" works.
+              const v = a.value.replace(/[\u0000- ]/g, '').toLowerCase();
+              const okUrl = /^(https?:|mailto:|#)/.test(v) ||
+                // Photos embedded in a description as base64 — raster types only, never SVG.
+                (name === 'src' && /^data:image\/(png|jpe?g|gif|webp);/.test(v));
+              if (!okUrl) n.removeAttribute(a.name);
+            } else if (name === 'style' && /expression|javascript:|url\s*\(/i.test(a.value)) {
+              n.removeAttribute(a.name);
+            }
+          });
+        }
+      } else if (n.nodeType !== 3 && n.nodeType !== 8) {
+        n.remove();   // anything that is neither an element, text nor a comment
+      }
+      n = next;
+    }
+  };
+  clean(doc.body);
+  return doc.body.innerHTML;
+}
+
+/* A WMS or WFS layer's attribution is its name, which can come from a configuration file. Same
+   body as Leaflet 1.7.1's own _update, with each entry passed through nvSafeHtml: the bundled
+   credits (links, &copy;) come out exactly as before. */
+if (typeof L !== 'undefined' && L.Control && L.Control.Attribution) {
+  L.Control.Attribution.prototype._update = function () {
+    if (!this._map) return;
+    const attribs = [];
+    for (const i in this._attributions) if (this._attributions[i]) attribs.push(nvSafeHtml(i));
+    const parts = [];
+    if (this.options.prefix) parts.push(this.options.prefix);
+    if (attribs.length) parts.push(attribs.join(', '));
+    this._container.innerHTML = parts.join(' | ');
+  };
+}
+
 /* A one-button notice drawn by the PAGE, not by the system. Deliberately not alert()/confirm():
    both hold the main thread for as long as they are on screen, and that costs twice over here.
    Once because replies keep arriving while the thread is held and cannot be read, so the worst
@@ -1295,8 +1371,8 @@ async function buildDiagReport() {
       if (!o.attribution || typeof o.attribution !== 'string') return;
       // Parse through the DOM so entities (&copy;, &amp;) come out as characters:
       // a regex strips the tags but would leave "&copy;" sitting in the report.
-      const _tmp = document.createElement('div');
-      _tmp.innerHTML = o.attribution;
+      // A DOMParser document rather than a div of this page, which would load any image in it.
+      const _tmp = new DOMParser().parseFromString(o.attribution, 'text/html').body;
       const clean = (_tmp.textContent || '').replace(/\s+/g, ' ').trim();
       if (!clean) return;
       /* Tagged when the string is a provider CREDIT rather than a name the app gave the layer.

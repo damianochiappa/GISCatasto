@@ -128,7 +128,7 @@ _attachAddressSearch(
     map.flyTo([lat, lon], 14);
     gotoMarker = L.circleMarker([lat, lon], { radius: 10, color: '#e05252', fillColor: '#e05252', fillOpacity: 0.7, weight: 2 })
       .addTo(map)
-      .bindPopup(`<div class="goto-popup"><b>${name}</b><br>Lat: ${(+lat).toFixed(6)}<br>Lon: ${(+lon).toFixed(6)}</div>`)
+      .bindPopup(`<div class="goto-popup"><b>${_xmlEsc(name)}</b><br>Lat: ${(+lat).toFixed(6)}<br>Lon: ${(+lon).toFixed(6)}</div>`)
       .openPopup();
   },
   { onlyIfText: true, searchOnEnter: false }
