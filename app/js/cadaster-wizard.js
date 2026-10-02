@@ -159,6 +159,12 @@
     return all.length ? (all[0].textContent || '').trim() : '';
   }
 
+  // "8", or "8 – sez. A" in a comune split into cadastral sections.
+  function sheetText(sh) {
+    if (!sh) return '';
+    return (sh.label || '') + (sh.section ? ' \u2013 sez. ' + sh.section : '');
+  }
+
   // OGC Filter Encoding 1.1 — PropertyIsEqualTo, URL-encoded. PCN MapServer supports this
   // server-side on cod_reg/cod_prov/pro_com (validated 2026-06-30). Avoids downloading the
   // full national dataset and filtering client-side.
@@ -284,6 +290,55 @@
 
   /* ===== Cadaster WFS (Agenzia Entrate) ===== */
 
+  // AE answers some bbox requests with an OGC exception report ("InvalidFormat") and HTTP 200
+  // instead of features. Read as a document it holds no features, so it used to pass for an
+  // empty tile and the fogli in it vanished from the list without a word. The same area split in
+  // four is answered, so a refused tile is split and asked again, up to TILE_SPLIT_DEPTH times
+  // (16 pieces). Whatever is still refused after that is counted as a hole for the caller.
+  const TILE_SPLIT_DEPTH = 2;
+
+  function isRefusal(doc) {
+    const root = doc && doc.documentElement;
+    if (!root) return true;
+    const name = root.localName;
+    return name === 'ServiceExceptionReport' || name === 'ExceptionReport' ||
+           doc.getElementsByTagName('parsererror').length > 0;
+  }
+
+  function tileUrl(typeName, tile) {
+    const [s, w, n, e] = tile;
+    const bboxParam =
+      s.toFixed(6) + ',' + w.toFixed(6) + ',' + n.toFixed(6) + ',' + e.toFixed(6) +
+      ',urn:ogc:def:crs:EPSG::6706';
+    return CADASTER_WFS +
+      '?service=WFS&version=2.0.0&request=GetFeature' +
+      '&typeNames=' + encodeURIComponent(typeName) +
+      '&srsName=' + encodeURIComponent('urn:ogc:def:crs:EPSG::6706') +
+      '&bbox=' + encodeURIComponent(bboxParam) +
+      '&count=20000';
+  }
+
+  // Resolves to { feats, holes }. Transport errors reject, as before; only refusals are split.
+  // The pieces are fetched one after another, so a split never raises the caller's concurrency.
+  async function fetchTileFeatures(typeName, tagName, tile, depth) {
+    const doc = await fetchXml(tileUrl(typeName, tile));
+    if (!isRefusal(doc)) {
+      return { feats: Array.from(doc.getElementsByTagNameNS('*', tagName)), holes: 0 };
+    }
+    if (window.console) console.warn('[cadaster] tile refused', tile.map(v => v.toFixed(4)).join(','),
+                                     'depth', depth);
+    if (depth >= TILE_SPLIT_DEPTH) return { feats: [], holes: 1 };
+    const [s, w, n, e] = tile;
+    const ms = (s + n) / 2, mw = (w + e) / 2;
+    const out = { feats: [], holes: 0 };
+    for (const q of [[s, w, ms, mw], [s, mw, ms, e], [ms, w, n, mw], [ms, mw, n, e]]) {
+      const r = await fetchTileFeatures(typeName, tagName, q, depth + 1);
+      for (const f of r.feats) out.feats.push(f);
+      out.holes += r.holes;
+    }
+    return out;
+  }
+
   // Agenzia Entrate INSPIRE WFS silently returns 0 features when the bbox exceeds ~50 km²
   // (the same reason the production Catasto layer uses minZoom 14: viewport tiles stay small).
   // We tile the comune bbox at ~0.063° lat / cos-adjusted lon (~7 km ⇒ ~49 km², under threshold
@@ -311,25 +366,18 @@
     let nextIdx = 0;
     let done = 0;
     let firstErr = null;
+    let holes = 0;
     const runWorker = async () => {
       while (true) {
         if (firstErr) return;
         const idx = nextIdx++;
         if (idx >= tiles.length) return;
         const [s, w, n, e] = tiles[idx];
-        const bboxParam =
-          s.toFixed(6) + ',' + w.toFixed(6) + ',' + n.toFixed(6) + ',' + e.toFixed(6) +
-          ',urn:ogc:def:crs:EPSG::6706';
-        const url = CADASTER_WFS +
-          '?service=WFS&version=2.0.0&request=GetFeature' +
-          '&typeNames=' + encodeURIComponent(ZONING_TYPENAME) +
-          '&srsName=' + encodeURIComponent('urn:ogc:def:crs:EPSG::6706') +
-          '&bbox=' + encodeURIComponent(bboxParam) +
-          '&count=20000';
         let tileCount = 0;
         try {
-          const doc = await fetchXml(url);
-          const feats = doc.getElementsByTagNameNS('*', 'CadastralZoning');
+          const r = await fetchTileFeatures(ZONING_TYPENAME, 'CadastralZoning', tiles[idx], 0);
+          holes += r.holes;
+          const feats = r.feats;
           tileCount = feats.length;
           for (let i = 0; i < feats.length; i++) {
             const label = textOf(feats[i], 'label') || textOf(feats[i], 'LABEL');
@@ -371,7 +419,7 @@
     const byAU = {};
     for (const z of rawZones) {
       if (!z.au) continue;
-      (byAU[z.au] || (byAU[z.au] = new Set())).add(z.label);
+      (byAU[z.au] || (byAU[z.au] = new Set())).add(z.ref || z.label);
     }
     let targetAU = null;
     const auCodes = Object.keys(byAU);
@@ -389,28 +437,37 @@
       targetAU = auCodes[0];
     }
 
+    // One entry per sheet REFERENCE, not per label. A comune split into cadastral sections
+    // numbers its fogli once per section — Groscavallo (E199) has a foglio 8 in each of A, B
+    // and C (E199A000800, E199B000800, E199C000800) — and grouping by label merged them into one
+    // entry with the union bbox and the ref of whichever arrived first, so the parcel search
+    // looked in one section only. The 5th character of the ref is the section, '_' for none.
+    // Without a ref (older server variants) the label is the key, as before.
     const seen = {};
     const dedup = [];
     for (const z of rawZones) {
       if (targetAU && z.au !== targetAU) continue;         // drop neighbouring comuni
-      if (seen[z.label]) {
-        const ex = seen[z.label];
-        if (z.ref && !ex.ref) ex.ref = z.ref;
+      const key = z.ref || z.label;
+      if (seen[key]) {
+        const ex = seen[key];
         ex.bbox[0] = Math.min(ex.bbox[0], z.bbox[0]);
         ex.bbox[1] = Math.min(ex.bbox[1], z.bbox[1]);
         ex.bbox[2] = Math.max(ex.bbox[2], z.bbox[2]);
         ex.bbox[3] = Math.max(ex.bbox[3], z.bbox[3]);
       } else {
-        seen[z.label] = { label: z.label, ref: z.ref || '', bbox: z.bbox.slice() };
-        dedup.push(seen[z.label]);
+        const sec = z.ref.length > 4 && z.ref[4] !== '_' ? z.ref[4] : '';
+        seen[key] = { label: z.label, section: sec, ref: z.ref || '', bbox: z.bbox.slice() };
+        dedup.push(seen[key]);
       }
     }
     dedup.sort((a, b) => {
       const na = parseInt(a.label, 10), nb = parseInt(b.label, 10);
-      if (isFinite(na) && isFinite(nb)) return na - nb;
-      return a.label.localeCompare(b.label);
+      if (isFinite(na) && isFinite(nb) && na !== nb) return na - nb;
+      return a.label.localeCompare(b.label) || a.section.localeCompare(b.section);
     });
-    _sheetsByComune[comune.code] = dedup;
+    // A list with holes is shown but not cached, so picking the comune again asks again.
+    if (holes) dedup.incomplete = holes;
+    else _sheetsByComune[comune.code] = dedup;
     setStatus('');
     return dedup;
   }
@@ -427,6 +484,7 @@
     let unionBBox = null;
     let firstErr = null;
     let allFound = false;
+    let holes = 0;
     const [ss, sw, sn, se] = sheet.bbox;
     const LAT_STEP = 0.01; // ~1.1 km — safely below AE silent-zero threshold
     const midLat = (ss + sn) / 2;
@@ -455,20 +513,11 @@
         if (allFound || firstErr) return;
         const idx = nextIdx++;
         if (idx >= tiles.length) return;
-        const [s, w, n, e] = tiles[idx];
-        const bboxParam =
-          s.toFixed(6) + ',' + w.toFixed(6) + ',' + n.toFixed(6) + ',' + e.toFixed(6) +
-          ',urn:ogc:def:crs:EPSG::6706';
-        const url = CADASTER_WFS +
-          '?service=WFS&version=2.0.0&request=GetFeature' +
-          '&typeNames=' + encodeURIComponent(PARCEL_TYPENAME) +
-          '&srsName=' + encodeURIComponent('urn:ogc:def:crs:EPSG::6706') +
-          '&bbox=' + encodeURIComponent(bboxParam) +
-          '&count=20000';
         try {
-          const doc = await fetchXml(url);
+          const r = await fetchTileFeatures(PARCEL_TYPENAME, 'CadastralParcel', tiles[idx], 0);
           if (allFound || firstErr) return;
-          const feats = doc.getElementsByTagNameNS('*', 'CadastralParcel');
+          holes += r.holes;
+          const feats = r.feats;
           for (let i = 0; i < feats.length; i++) {
             const ref = textOf(feats[i], 'NATIONALCADASTRALREFERENCE') ||
                         textOf(feats[i], 'nationalCadastralReference');
@@ -489,6 +538,14 @@
       Array.from({ length: Math.min(CONCURRENCY, tiles.length) }, () => runWorker())
     );
     if (firstErr && !unionBBox) throw firstErr;
+    // Nothing found, but part of the sheet was never answered: "no matching parcel" would be a
+    // claim about ground the server did not show us.
+    if (!unionBBox && holes) {
+      const err = new Error('Ricerca incompleta: il server del catasto non ha risposto per una ' +
+                            'parte del foglio. Riprova.');
+      err.incomplete = true;
+      throw err;
+    }
     return unionBBox;
   }
 
@@ -685,7 +742,7 @@
       } catch (err) {
         if (window.console) console.warn('cadaster fitBounds (sheet) failed', err);
       }
-      revealResult('Zoom sul foglio ' + (sheet.label || ''));
+      revealResult('Zoom sul foglio ' + sheetText(sheet));
       _done(); return;
     }
     // Filtering path — lower parcel layer's minZoom to 14 so subsequent _update fires at the
@@ -699,7 +756,7 @@
       findParcelsBBox(sheet, targetRefs).then(bb => {
         if (myGen !== _wizardGen) return;
         if (!bb) {
-          setStatus('Nessuna particella corrisponde a "' + parcelText + '" nel foglio ' + (sheet.label || ''), true);
+          setStatus('Nessuna particella corrisponde a "' + parcelText + '" nel foglio ' + sheetText(sheet), true);
           _done(); return;
         }
         try {
@@ -713,7 +770,8 @@
       }).catch(err => {
         if (myGen !== _wizardGen) return;
         if (window.console) console.warn('cadaster parcel prefetch failed', err);
-        setStatus('Particella non trovata: ' + (err && err.message || err), true);
+        setStatus(err && err.incomplete ? err.message
+                                        : 'Particella non trovata: ' + (err && err.message || err), true);
         _done();
       });
       return;
@@ -740,7 +798,7 @@
       if (myGen !== _wizardGen) return;
       const count = (ev && ev.count) || 0;
       if (count === 0) {
-        setStatus('Nessuna particella corrisponde a "' + parcelText + '" nel foglio ' + (sheet.label || ''), true);
+        setStatus('Nessuna particella corrisponde a "' + parcelText + '" nel foglio ' + sheetText(sheet), true);
         _done(); return;
       }
       const marked = selectAllRendered(parcelLayer);
@@ -867,13 +925,24 @@
       const ensureBbox = c.bbox ? Promise.resolve() : loadComuneBbox(c);
       ensureBbox.then(() => loadSheets(c)).then(list => {
         _sheets = list;
+        if (list.incomplete && !list.length) {
+          sheetSel.innerHTML = '<option value="">Errore</option>';
+          sheetSel.disabled = true;
+          setStatus('Il server del catasto non ha restituito i fogli di ' + c.name +
+                    '. Riprova scegliendo di nuovo il comune.', true);
+          return;
+        }
+        if (list.incomplete) {
+          setStatus('Elenco dei fogli incompleto: il server del catasto non ha risposto per una ' +
+                    'parte del comune. Riprova scegliendo di nuovo il comune.', true);
+        }
         if (!list.length) {
           sheetSel.innerHTML = '<option value="">Nessun foglio trovato</option>';
           sheetSel.disabled = true;
           if (typeof toastMsg === 'function') toastMsg('Nessun foglio catastale trovato per ' + c.name, 'error', undefined, 'sidebar');
           return;
         }
-        fillSelect(sheetSel, list, sh => 'Foglio ' + sh.label, 'Scegli il foglio\u2026');
+        fillSelect(sheetSel, list, sh => 'Foglio ' + sheetText(sh), 'Scegli il foglio\u2026');
       }).catch(err => {
         sheetSel.innerHTML = '<option value="">Errore</option>';
         sheetSel.disabled = true;

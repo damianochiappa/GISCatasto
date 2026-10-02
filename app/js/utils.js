@@ -294,6 +294,10 @@ function nvSafeHtml(html) {
           while (n.firstChild) parent.insertBefore(n.firstChild, n);   // already cleaned above
           n.remove();
         } else {
+          /* An element parsed with is="…" keeps that value internally, and the serializer writes
+             it back even after removeAttribute('is'). Such an element is rebuilt below as a plain
+             one carrying only the attributes that survive the filter. */
+          const hadIs = n.hasAttribute('is');
           Array.from(n.attributes).forEach(a => {
             const name = a.name.toLowerCase();
             if (!_SAFE_ATTRS.has(name)) { n.removeAttribute(a.name); return; }
@@ -308,6 +312,12 @@ function nvSafeHtml(html) {
               n.removeAttribute(a.name);
             }
           });
+          if (hadIs) {
+            const plain = doc.createElement(n.localName);
+            Array.from(n.attributes).forEach(a => plain.setAttribute(a.name, a.value));
+            while (n.firstChild) plain.appendChild(n.firstChild);      // already cleaned above
+            parent.replaceChild(plain, n);
+          }
         }
       } else if (n.nodeType !== 3 && n.nodeType !== 8) {
         n.remove();   // anything that is neither an element, text nor a comment
@@ -319,9 +329,10 @@ function nvSafeHtml(html) {
   return doc.body.innerHTML;
 }
 
-/* A WMS or WFS layer's attribution is its name, which can come from a configuration file. Same
-   body as Leaflet 1.7.1's own _update, with each entry passed through nvSafeHtml: the bundled
-   credits (links, &copy;) come out exactly as before. */
+/* A basemap's attribution can be the name it has in a configuration file, and an overlay's is
+   derived from its service's host name (_overlayCredit in map.js). Same body as Leaflet 1.7.1's
+   own _update, with each entry passed through nvSafeHtml: the bundled credits (links, &copy;)
+   come out exactly as before. */
 if (typeof L !== 'undefined' && L.Control && L.Control.Attribution) {
   L.Control.Attribution.prototype._update = function () {
     if (!this._map) return;
@@ -1361,25 +1372,26 @@ async function buildDiagReport() {
     }
   } catch (_) { kv('Long tasks', 'unavailable'); }
 
-  // Name each layer by its attribution — that is what the app already sets to the
-  // layer's own name. Long ones are provider credits (basemaps): truncate rather
-  // than drop them, or the basemap in use never appears in the report at all.
+  // Name each layer by the name the app gave it (layerName), else by its attribution.
+  // Long ones are provider credits (basemaps): truncate rather than drop them, or the
+  // basemap in use never appears in the report at all.
   const layers = [];
   try {
     map.eachLayer(l => {
       const o = l.options || {};
-      if (!o.attribution || typeof o.attribution !== 'string') return;
+      const label = o.layerName || o.attribution;
+      if (!label || typeof label !== 'string') return;
       // Parse through the DOM so entities (&copy;, &amp;) come out as characters:
       // a regex strips the tags but would leave "&copy;" sitting in the report.
       // A DOMParser document rather than a div of this page, which would load any image in it.
-      const _tmp = new DOMParser().parseFromString(o.attribution, 'text/html').body;
+      const _tmp = new DOMParser().parseFromString(label, 'text/html').body;
       const clean = (_tmp.textContent || '').replace(/\s+/g, ' ').trim();
       if (!clean) return;
       /* Tagged when the string is a provider CREDIT rather than a name the app gave the layer.
          Both are legitimate entries — a basemap with no name of its own can only be identified by
          its credit, which is why these are not dropped — but without the tag a reader counts
          "© OpenStreetMap contributors" as an overlay and the layer total reads one too high. */
-      const isCredit = /^©|\bcontributors\b|^\(c\)/i.test(clean);
+      const isCredit = !o.layerName && /^©|\bcontributors\b|^\(c\)/i.test(clean);
       layers.push((clean.length > 70 ? clean.slice(0, 70) + '…' : clean) +
                   (isCredit ? ' [basemap credit]' : '') +
                   (o.crsCode ? ' [' + o.crsCode + ']' : '') +

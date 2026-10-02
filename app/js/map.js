@@ -91,8 +91,8 @@ function _tileLayerLabel(layer) {
       if (sp && sp.textContent.trim()) return sp.textContent.trim();
     }
   } catch(_) {}
-  // Otherwise the attribution, stripped of the markup the bundled basemaps carry in it.
-  const a = ((layer.options && layer.options.attribution) || '').replace(/<[^>]*>/g, '').trim();
+  // Otherwise its name, or the attribution stripped of the markup the bundled basemaps carry in it.
+  const a = ((layer.options && (layer.options.layerName || layer.options.attribution)) || '').replace(/<[^>]*>/g, '').trim();
   if (!a) return 'la mappa';
   return a.length > 40 ? a.slice(0, 40) + '…' : a;
 }
@@ -1507,7 +1507,8 @@ const _WMSImageLayer = L.Layer.extend({
       this._removeOverlay();
       const now = Date.now();
       if (!this._lastZoomWarn || now - this._lastZoomWarn > 5000) {
-        const who = this.options.attribution ? '"' + this.options.attribution + '"' : 'WMS layer';
+        const nm = this.options.layerName || this.options.attribution;
+        const who = nm ? '"' + nm + '"' : 'WMS layer';
         _reportBelowScale(who);
         this._lastZoomWarn = now;
       }
@@ -1579,7 +1580,8 @@ const _WMSImageLayer = L.Layer.extend({
       this._fetchedBounds = null;
       if (this._errShown) return;
       this._errShown = true;
-      const who = this.options.attribution ? '"' + this.options.attribution + '"' : 'layer';
+      const nm = this.options.layerName || this.options.attribution;
+      const who = nm ? '"' + nm + '"' : 'layer';
       _reportLayerError(who, 'WMS ' + who + ' — ' + detail);
       // Also record it: the toast is gone in seconds, the diagnostic report is
       // what survives long enough to be looked at afterwards.
@@ -2118,7 +2120,7 @@ map.on('zoom',  () => _frameProbeStart('zoom'));
 
 function _wfsLayerAdded(wfsLayer) {
   _wfsCount++;
-  _wfsRegistry.push({ typeName: wfsLayer.options.typeName, name: wfsLayer.options.attribution, minZoom: wfsLayer.options.minZoom || 14, layer: wfsLayer });
+  _wfsRegistry.push({ typeName: wfsLayer.options.typeName, name: wfsLayer.options.layerName || wfsLayer.options.attribution, minZoom: wfsLayer.options.minZoom || 14, layer: wfsLayer });
   _selUpdateBadge();
 }
 function _wfsLayerRemoved(wfsLayer) {
@@ -2557,7 +2559,7 @@ function _wfsPump() {
      up on keeps running on its own setTimeout chain, so it says so by name. */
   const wd = setTimeout(() => {
     if (typeof nvLog === 'function') {
-      nvLog('queue watchdog', layer.options.attribution || layer.options.typeName || '?',
+      nvLog('queue watchdog', layer.options.layerName || layer.options.attribution || layer.options.typeName || '?',
             'closed after ' + (_WFS_QUEUE_WATCHDOG_MS / 1000).toFixed(0) + 's');
     }
     finish(undefined, true);
@@ -2573,7 +2575,7 @@ function _wfsPump() {
 function _wfsQueueUpdate() {
   window._nvWfsQueue = {
     pending: _wfsQueue.length,
-    current: _wfsQueueBusy ? (_wfsQueueBusy.options.attribution || '') : null,
+    current: _wfsQueueBusy ? (_wfsQueueBusy.options.layerName || _wfsQueueBusy.options.attribution || '') : null,
     // The layer objects themselves, so the legend can mark its own rows without matching on names.
     waiting: _wfsQueue.map(j => j.layer),
     busy: _wfsQueueBusy
@@ -2592,10 +2594,13 @@ function _wfsQueueUpdate() {
 
    ⚠ The text nevertheless offers to lock north, which reads like a contradiction of the paragraph
    above and is not one: the 2.0x/3.0x figures are FRAME TIME, and rotation is not named here for
-   being slow to draw. It is named for memory. The SVG holds pixels, not coordinates, so every
-   degree rewrites the `d` of every path — with thousands of vector features that is the shape of
-   the 2.1 GB session reproduced on 2026-08-31 (many WFS over Rome, plus rotation). Frame time and
-   footprint are two different costs and only the second one is at stake in this dialog.
+   being slow to draw. It is named for the AREA it asks for. On a turned map every WFS layer
+   requests the circumscribed square of the screen (_WFSLayer._requestBounds), so that no later
+   turn uncovers it: 2.3x the screen on 423x748, more than 2x on any screen that is not square.
+   More ground means more features to fetch and parse, which is the cost this dialog is about.
+   The wording stays generic ("rotating costs more") on purpose: at or below a layer's minZoom the
+   square is refused and the plain envelope is asked for, so no fixed figure would be true of
+   every layer on screen.
    The line is therefore conditional on the map being ACTUALLY turned, not on free rotation being
    unlocked: someone sitting at north pays nothing, whatever the compass allows. And it is only
    ever read outside navigation — see the hold in _wfsNotice — which matters, because navigation
@@ -2891,8 +2896,8 @@ function _wfsNotice(took, open) {
      this code guessing on their behalf. */
   /* ⚠ "Background maps are not the problem" is dropped on the starved branch, and deliberately:
      it is true of the CPU and false of the pipe, where tile requests compete for the same
-     bandwidth as the overlays. Same for the rotation line — nothing is being redrawn while
-     nothing is arriving.
+     bandwidth as the overlays. The rotation line is dropped there too: the branch already tells
+     the user to cut the overlays and check the link, and one remedy per message is enough.
      On the parse branch it is qualified instead of dropped, and only when the map is turned:
      a satellite basemap does cost more to redraw in rotation than a plain one (field
      observation, 2026-09-06), which is the single case where the flat claim is false. At
@@ -2915,17 +2920,19 @@ function _wfsNotice(took, open) {
         : (_back === 1 ? 'ne ha risposto solo 1' : 'ne hanno risposto solo ' + _back)) + '.\n\n' +
       'Riduci gli overlay attivi e verifica di avere una buona connessione.'
     : layers + ' overlay attivi, con circa ' + feats.toLocaleString() + ' geometrie caricate.\n\n' +
-      'Ogni spostamento, rotazione o zoom le richiede di nuovo e le rilegge: ' +
+      'Ogni spostamento o zoom le richiede di nuovo e le rilegge: ' +
       (open ? 'sta impiegando oltre ' : 'ha impiegato ') + (took / 1000).toFixed(0) + ' secondi' +
       (open ? ' finora.' : ' questa volta.') + '\n\n' +
+      'Più area mostri sullo schermo, più dati l\'app deve caricare. ' +
       'Spegni gli overlay che non usi, partendo dai più pesanti, ' +
       'oppure avvicina lo zoom prima di spostarti.\n\n' +
       /* Only when the map is actually turned. See the note at the head of this section for why
          rotation is named at all when it is the cheaper gesture to draw: what it costs here is
-         memory, not frame time. */
+         the larger area requested, not frame time. */
       (_mapIsTurned()
-        ? 'La mappa è anche ruotata. Se non ti serve così, tocca la bussola per bloccarla a nord: ' +
-          'con questo numero di geometrie ogni rotazione le ridisegna tutte.\n\n'
+        ? 'La mappa è ruotata, e ruotare costa di più: l\'app deve caricare un\'area più grande ' +
+          'dello schermo per coprire tutti gli angoli. Se non ti serve, tocca la bussola per ' +
+          'tornare a nord.\n\n'
         : '') +
       (_mapIsTurned()
         ? 'Le mappe di sfondo sono raramente il problema, ma una satellitare pesa di più da ' +
@@ -3275,7 +3282,10 @@ const _WFSLayer = L.Layer.extend({
 
   /* Human name for toasts, so a message says WHICH overlay it refers to (there can be
      several WFS at once: Catasto Particelle, Fogli, user-added). Falls back when unnamed. */
-  _name() { return this.options.attribution ? '"' + this.options.attribution + '"' : 'WFS layer'; },
+  _name() {
+    const nm = this.options.layerName || this.options.attribution;
+    return nm ? '"' + nm + '"' : 'WFS layer';
+  },
 
   _update() {
     /* Every early return below has to release the queue, or the layers behind this one never run.
@@ -3982,9 +3992,47 @@ function _probeWmsTiled(url, layers, version, minZoom, cb) {
   } catch (_) { finish(false); }
 }
 
+/* ===== OVERLAY CREDITS =====
+   An overlay is credited to its PROVIDER, not by its own name: the map corner lists one entry per
+   distinct string, so seven cadastral overlays share one "© Agenzia delle Entrate" instead of
+   listing seven layer names. The layer's name travels separately, in options.layerName.
+   Matched on the end of the host name. A host not in the table (a service the user added) is
+   credited by its base domain, so a source that asks for attribution still gets one.
+   Basemaps keep the credit they were given: their providers' terms set its wording. */
+const _CREDIT_BY_HOST = [
+  ['agenziaentrate.gov.it',     '© Agenzia delle Entrate'],
+  ['arcgisonline.com',          'Esri'],
+  ['pcn.minambiente.it',        '© Geoportale Nazionale'],
+  ['regione.fvg.it',            '© Regione Friuli Venezia Giulia'],
+  ['regione.lazio.it',          '© Regione Lazio'],
+  ['regione.liguria.it',        '© Regione Liguria'],
+  ['sit.puglia.it',             '© Regione Puglia'],
+  ['regione.sardegna.it',       '© Regione Sardegna'],
+  ['regione.sicilia.it',        '© Regione Siciliana'],
+  ['regione.toscana.it',        '© Regione Toscana']
+];
+// Labels that make the third-from-last one part of the base domain: regione.piemonte.it, not piemonte.it.
+const _BASE_DOMAIN_OWNERS = new Set(['regione', 'provincia', 'comune', 'cittametropolitana']);
+const _SECOND_LEVEL = new Set(['gov', 'edu', 'ac', 'co', 'com', 'org', 'net']);
+
+function _overlayCredit(url, fallback) {
+  let host = '';
+  try { host = new URL(url).hostname.toLowerCase(); } catch (_) {}
+  if (!host) return fallback || '';
+  for (const [suffix, credit] of _CREDIT_BY_HOST) {
+    if (host === suffix || host.endsWith('.' + suffix)) return credit;
+  }
+  const parts = host.split('.');
+  if (parts.length <= 2 || /^[\d.]+$/.test(host) || host.indexOf(':') > -1) return host;
+  const keep = (_BASE_DOMAIN_OWNERS.has(parts[parts.length - 3]) ||
+                _SECOND_LEVEL.has(parts[parts.length - 2])) ? 3 : 2;
+  return parts.slice(-keep).join('.');
+}
+
 function _createLayer(cfg, token, isOverlay) {
   if (isOverlay === undefined) isOverlay = (cfg.useAs === 'overlay');
   const url = cfg.url.replace(/\/?$/, '');
+  const credit = isOverlay ? _overlayCredit(cfg.url, cfg.name) : cfg.name;
   switch (cfg.type) {
     case 'wfs': {
       if (!cfg.layers) throw new Error('Per il WFS serve il nome del tipo — usa “Leggi i layer”');
@@ -3994,7 +4042,8 @@ function _createLayer(cfg, token, isOverlay) {
         crs: cfg.crs || null,
         filterAttr: cfg.filterAttr || '',
         filterVals: cfg.filterVals || '',
-        attribution: cfg.name, opacity: cfg.opacity !== undefined ? cfg.opacity / 100 : 0.8,
+        attribution: credit, layerName: cfg.name,
+        opacity: cfg.opacity !== undefined ? cfg.opacity / 100 : 0.8,
         color: cfg.color || null,
         hollow: cfg.hollow || false,
         fillOpacity: cfg.fillOpacity !== undefined ? cfg.fillOpacity : null,
@@ -4034,7 +4083,7 @@ function _createLayer(cfg, token, isOverlay) {
            bundled CTRs, which are cabled opaque in the config. A user-added regional map went
            through this branch instead and kept inheriting the defect. */
         transparent: isOverlay, bgcolor: cfg.bgcolor || '0xFFFFFF', format: 'image/png',
-        attribution: cfg.name, opacity: 0.8,
+        attribution: credit, layerName: cfg.name, opacity: 0.8,
         crs: _crsCode === 'EPSG:3857' ? L.CRS.EPSG3857 : L.CRS.EPSG4326,
         crsCode: _crsCode, geoAxes: _isGeo,
         // Gate the request by the layer's own scale window, basemap included: below it the
@@ -4050,7 +4099,7 @@ function _createLayer(cfg, token, isOverlay) {
       return lyr;
     }
     case 'wmts':
-      return L.tileLayer(url, { attribution: cfg.name, maxZoom: 21 });
+      return L.tileLayer(url, { attribution: credit, layerName: cfg.name, maxZoom: 21 });
     /* Written only by the offline downloader (offline.js), never by "Add web map": a WMS
        saved for offline use is tiled, so it must come back as a tile layer that rebuilds
        the same BBOX URLs, not as the single-image overlay a user-added WMS becomes. */
@@ -4058,7 +4107,7 @@ function _createLayer(cfg, token, isOverlay) {
       const wp = L.extend({}, cfg.wmsParams || {});
       delete wp.crs; delete wp.srs;
       return L.tileLayer.wms(cfg.url, L.extend(wp, {
-        attribution: cfg.name,
+        attribution: credit, layerName: cfg.name,
         uppercase: !!cfg.uppercase,
         // Some regional services only draw inside a scale window and answer with a blank
         // image below it (the Liguria CTR starts at ~z16). Not requesting at all is both
@@ -4069,7 +4118,7 @@ function _createLayer(cfg, token, isOverlay) {
     }
     case 'arcgis': {
       const tUrl = url + '/tile/{z}/{y}/{x}' + (token ? '?token=' + token : '');
-      return L.tileLayer(tUrl, { attribution: cfg.name, maxZoom: 21 });
+      return L.tileLayer(tUrl, { attribution: credit, layerName: cfg.name, maxZoom: 21 });
     }
     default: throw new Error('Unsupported type: ' + cfg.type);
   }
