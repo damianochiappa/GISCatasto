@@ -296,12 +296,29 @@ const _makeToggle = (position, extraCls, title, svg, targetClass) => L.Control.e
 });
 const _svgPencil = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
 const _svgRuler  = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15l6-6 12 12-6 6z"/><path d="M9 9l3 3M12 6l3 3M15 3l3 3"/></svg>';
-map.addControl(new (_makeToggle('topleft',  'leaflet-toggle-draw',    'Show/hide draw tools',    _svgPencil, 'draw-expanded'))());
-map.addControl(new (_makeToggle('topright', 'leaflet-toggle-measure', 'Show/hide measure tools', _svgRuler,  'measure-expanded'))());
+map.addControl(new (_makeToggle('topleft',  'leaflet-toggle-draw',    'Mostra/nascondi gli strumenti di disegno',    _svgPencil, 'draw-expanded'))());
+map.addControl(new (_makeToggle('topright', 'leaflet-toggle-measure', 'Mostra/nascondi gli strumenti di misura', _svgRuler,  'measure-expanded'))());
 
+/* The plugin's texts were its English and its desktop gestures, and on a touch screen Leaflet
+   opens a tooltip on TAP: touching a measured point said "Press SHIFT-key and click to delete
+   point". Deleting, resuming and inserting need a modifier key, and moving a point listens to
+   mousedown, which a finger dragging never sends — so on a phone the only gesture these points
+   answer is "tap the last one to finish", and that is the only one the tooltips state. The
+   point that finishes is also drawn larger (radius 6 → 10), because it is the one to hit. */
+const _pmTouch = !!L.Browser.touch;
 const _plMeasure = L.control.polylineMeasure({
   position: 'topright', unit: 'kilometres', showBearings: true,
-  clearMeasurementsOnStop: false, showClearControl: true, showUnitControl: true
+  clearMeasurementsOnStop: false, showClearControl: true, showUnitControl: true,
+  bearingTextIn: 'Entrata', bearingTextOut: 'Uscita',
+  tooltipTextFinish: 'Tocca per <b>terminare la misura</b>',
+  tooltipTextDelete: _pmTouch ? '' : '<br>MAIUSC + clic per <b>eliminare il punto</b>',
+  tooltipTextMove:   _pmTouch ? '' : 'Trascina per <b>spostare il punto</b><br>',
+  tooltipTextResume: _pmTouch ? '' : '<br>CTRL + clic per <b>riprendere la linea</b>',
+  tooltipTextAdd:    _pmTouch ? '' : 'CTRL + clic per <b>aggiungere un punto</b>',
+  measureControlTitleOn: 'Attiva la misura', measureControlTitleOff: 'Disattiva la misura',
+  clearControlTitle: 'Cancella le misure',
+  unitControlTitle: { text: 'Cambia unità', kilometres: 'chilometri', landmiles: 'miglia terrestri', nauticalmiles: 'miglia nautiche' },
+  currentCircle: { color: '#000', weight: 1, fillColor: '#f0f', fillOpacity: 1, radius: 10 }
 }).addTo(map);
 /* Plugin container is only marked `leaflet-bar` — add a unique class so CSS can target it. */
 if (_plMeasure && _plMeasure.getContainer) _plMeasure.getContainer().classList.add('leaflet-polyline-measure');
@@ -369,6 +386,51 @@ L.Draw.Rectangle.include({
     L.Draw.SimpleShape.prototype._fireCreatedEvent.call(this, poly);
   }
 });
+
+/* Leaflet.draw's own strings, in the app's language and in the words of a touch screen. They
+   were the library's English and its mouse vocabulary — "Click and drag to draw rectangle",
+   "Release mouse to finish drawing" — in an app that is otherwise Italian and runs on phones.
+   Set before the control below is built: the toolbars read them when they are created. */
+(function _italianDrawStrings() {
+  const d = L.drawLocal;
+  if (!d) return;
+  Object.assign(d.draw.toolbar.actions, { title: 'Annulla il disegno', text: 'Annulla' });
+  Object.assign(d.draw.toolbar.finish,  { title: 'Termina il disegno', text: 'Fine' });
+  Object.assign(d.draw.toolbar.undo,    { title: 'Togli l’ultimo punto disegnato', text: 'Togli ultimo' });
+  Object.assign(d.draw.toolbar.buttons, {
+    polyline: 'Disegna una linea', polygon: 'Disegna un poligono', rectangle: 'Disegna un rettangolo',
+    circle: 'Disegna un cerchio', marker: 'Aggiungi un segnaposto', circlemarker: 'Aggiungi un punto'
+  });
+  const h = d.draw.handlers;
+  h.circle.tooltip.start       = 'Tocca e trascina per disegnare il cerchio.';
+  h.circle.radius              = 'Raggio';
+  h.circlemarker.tooltip.start = 'Tocca la mappa per mettere il punto.';
+  h.marker.tooltip.start       = 'Tocca la mappa per mettere il segnaposto.';
+  Object.assign(h.polygon.tooltip, {
+    start: 'Tocca per iniziare il poligono.',
+    cont:  'Tocca per aggiungere un vertice.',
+    end:   'Tocca il primo punto per chiudere il poligono.'
+  });
+  h.polyline.error = '<strong>Errore:</strong> i lati non possono incrociarsi.';
+  Object.assign(h.polyline.tooltip, {
+    start: 'Tocca per iniziare la linea.',
+    cont:  'Tocca per aggiungere un punto.',
+    end:   'Tocca l’ultimo punto, o Fine, per terminare.'
+  });
+  h.rectangle.tooltip.start    = 'Tocca e trascina per disegnare il rettangolo.';
+  h.simpleshape.tooltip.end    = 'Solleva il dito per terminare.';
+  const e = d.edit.toolbar;
+  Object.assign(e.actions.save,     { title: 'Salva le modifiche', text: 'Salva' });
+  Object.assign(e.actions.cancel,   { title: 'Annulla: scarta tutte le modifiche', text: 'Annulla' });
+  Object.assign(e.actions.clearAll, { title: 'Elimina tutte le forme', text: 'Elimina tutto' });
+  Object.assign(e.buttons, {
+    edit: 'Modifica le forme', editDisabled: 'Nessuna forma da modificare',
+    remove: 'Elimina le forme', removeDisabled: 'Nessuna forma da eliminare'
+  });
+  d.edit.handlers.edit.tooltip.text    = 'Trascina i punti per modificare · doppio tocco su un vertice per eliminarlo.';
+  d.edit.handlers.edit.tooltip.subtext = 'Annulla scarta le modifiche.';
+  d.edit.handlers.remove.tooltip.text  = 'Tocca una forma per eliminarla.';
+})();
 
 map.addControl(new L.Control.Draw({
   position: 'topleft',
@@ -3535,12 +3597,12 @@ const _WFSLayer = L.Layer.extend({
               const geomSec = geomInfoSection(f);
               if (geomSec) popupEl.appendChild(geomSec);
               const selBtn = document.createElement('button');
-              selBtn.style.cssText = 'font-size:11px;padding:3px 10px;cursor:pointer;background:var(--accent);color:#fff;border:none;border-radius:4px;width:100%';
-              selBtn.textContent = _selKeys.has(key) ? '✓ Deselect' : '☆ Select';
+              selBtn.className = 'wfs-sel-btn';
+              selBtn.textContent = _selKeys.has(key) ? '✓ Deseleziona' : '☆ Seleziona';
               selBtn.addEventListener('click', e => {
                 e.stopPropagation();
                 _selToggle(key, layer, self.options.style, _labelRaw);
-                selBtn.textContent = _selKeys.has(key) ? '✓ Deselect' : '☆ Select';
+                selBtn.textContent = _selKeys.has(key) ? '✓ Deseleziona' : '☆ Seleziona';
               });
               popupEl.appendChild(selBtn);
               // Prevent popup interactions from leaking to the map (nav pick mode, selection toggle, scroll-zoom)

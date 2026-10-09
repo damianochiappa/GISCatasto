@@ -65,9 +65,12 @@ function setLayerColor(layer, color) {
   if (layer._isRaster) return; // color is baked into a raster WMS image server-side
   if (typeof layer.setStyle === 'function')  { try { layer.setStyle({ color, fillColor: color }); } catch(e) {} }
   if (typeof layer.setIcon === 'function') {
+    /* The same 12 px dot, centred in a 32 px box: the box is what a finger has to hit, and at
+       12 px a point of an imported file was the smallest target in the app. Nothing moves on
+       screen — the anchor is the centre in both. */
     layer.setIcon(L.divIcon({
-      html: `<div style="width:12px;height:12px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`,
-      className: '', iconSize: [12,12], iconAnchor: [6,6]
+      html: `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center"><div style="width:12px;height:12px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)"></div></div>`,
+      className: '', iconSize: [32,32], iconAnchor: [16,16]
     }));
   }
   if (typeof layer.eachLayer === 'function') layer.eachLayer(c => setLayerColor(c, color));
@@ -552,17 +555,28 @@ if (typeof L !== 'undefined' && L.KML && typeof L.KML.addPlacePopup === 'functio
   };
 }
 
+/* The Placemark a geometry element belongs to (L.KML tags each layer with its element). */
+function _kmlPlacemarkOf(node) {
+  for (let e = node; e; e = e.parentNode) if (e.nodeType === 1 && e.localName === 'Placemark') return e;
+  return null;
+}
+
+/* Attributes are paired through the element each layer was read from, not by position. L.KML
+   emits folders first, then loose placemarks, and inside a placemark lines before polygons
+   before points, so the n-th layer is not the n-th placemark: pairing by order put one
+   placemark's name and attributes on another in any file mixing folders and loose features. */
 function enhanceKMLLayer(kmlLayer, propsArray, kmlDoc) {
   if (typeof kmlLayer.eachLayer !== 'function') return;
+  const leaves = _flattenKMLLeafLayers(kmlLayer);
+  leaves.forEach(l => { l._nvKmlRoot = kmlLayer; });
   if (propsArray && propsArray.length) {
-    const leaves = _flattenKMLLeafLayers(kmlLayer);
     if (kmlDoc) {
-      let leafIdx = 0;
-      kmlDoc.querySelectorAll('Placemark').forEach((pm, pmIdx) => {
-        const props = propsArray[pmIdx];
-        const geomCount = pm.querySelectorAll('Point, LineString, Polygon').length || 1;
-        for (let g = 0; g < geomCount && leafIdx < leaves.length; g++, leafIdx++)
-          if (props) leaves[leafIdx]._kmlProps = props;
+      const index = new Map();
+      kmlDoc.querySelectorAll('Placemark').forEach((pm, i) => index.set(pm, i));
+      leaves.forEach(l => {
+        const pm = l._kmlNode ? _kmlPlacemarkOf(l._kmlNode) : null;
+        const i = pm ? index.get(pm) : undefined;
+        if (i !== undefined && propsArray[i]) l._kmlProps = propsArray[i];
       });
     } else {
       leaves.forEach((l, i) => { if (propsArray[i]) l._kmlProps = propsArray[i]; });
@@ -576,7 +590,6 @@ function enhanceKMLSublayer(layer) {
     layer.eachLayer(sub => enhanceKMLSublayer(sub));
     return;
   }
-  const isMarker = layer instanceof L.Marker;
   let existingHTML = '';
   if (layer.getPopup && layer.getPopup()) {
     const c = layer.getPopup().getContent();
@@ -634,34 +647,34 @@ function enhanceKMLSublayer(layer) {
       div.appendChild(geomSec);
     }
 
-    // Per-feature style controls were removed: color/weight/opacity for KML
-    // layers are managed from the sidebar layer-item (single source of truth,
-    // persisted to localStorage). Markers keep the icon picker because that's
-    // a per-feature attribute, not a layer-wide one.
-    if (isMarker) {
-      const styleHdr = document.createElement('div');
-      styleHdr.style.cssText = 'font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px';
-      styleHdr.textContent = 'Icona';
-      div.appendChild(styleHdr);
-
-      const pickerDiv = document.createElement('div');
-      pickerDiv.className = 'icon-picker';
-      let activeBtn = null;
-      MARKER_ICONS.forEach(icon => {
-        const btn = document.createElement('button');
-        btn.className = 'icon-btn'; btn.title = icon.l; btn.innerHTML = icon.html;
-        btn.addEventListener('click', ev => {
-          ev.stopPropagation();
-          if (activeBtn) activeBtn.classList.remove('selected');
-          btn.classList.add('selected'); activeBtn = btn;
-          layer._geoIcon = icon.e;
-          if (typeof layer.setIcon === 'function') layer.setIcon(makeEmojiIcon(icon.e));
-          setTimeout(() => layer.openPopup(), 30);
-        });
-        pickerDiv.appendChild(btn);
+    // Name and description, written into this placemark of the file (see _editKmlPlacemarkText).
+    if (layer._kmlNode) {
+      const editBtn = document.createElement('button');
+      // The neutral secondary button: green is the app's colour for saving/exporting, and this
+      // only opens an editor.
+      editBtn.className = 'btn btn-secondary';
+      editBtn.style.cssText = 'width:100%;margin:2px 0 6px';
+      editBtn.textContent = '✏ Modifica nome e descrizione';
+      editBtn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const pm = _kmlPlacemarkOf(layer._kmlNode);
+        const nmEl = pm && _kmlChild(pm, 'name');
+        const dsEl = pm && _kmlChild(pm, 'description');
+        showKmlTextModal(nmEl ? nmEl.textContent.trim() : '',
+                         stripGeomDescription(dsEl ? dsEl.textContent : '').trim(),
+                         (n, d) => {
+                           if (n.trim() === (nmEl ? nmEl.textContent.trim() : '') &&
+                               d === stripGeomDescription(dsEl ? dsEl.textContent : '').trim()) return;
+                           _editKmlPlacemarkText(layer, n, d);
+                         });
       });
-      div.appendChild(pickerDiv);
+      div.appendChild(editBtn);
     }
+
+    // No per-feature style controls: colour, weight and opacity of a KML layer are set from its
+    // legend entry. There used to be an icon picker for points, but the icon it set lived only
+    // in memory — gone at the next launch, at the next colour change and at the next save — so
+    // it promised something the app did not keep.
 
     // Prevent popup interactions from leaking to the map (nav pick mode, scroll-zoom)
     L.DomEvent.disableClickPropagation(div);
@@ -904,7 +917,7 @@ function _addContentLayer(content, name, mime, listOpts) {
     const parser = new DOMParser();
     const kmlDoc = parser.parseFromString(content, 'text/xml');
     const parseErr = kmlDoc.querySelector('parsererror');
-    if (parseErr) throw new Error('Invalid XML: ' + parseErr.textContent.substring(0, 80));
+    if (parseErr) throw new Error('KML non valido: ' + parseErr.textContent.substring(0, 80));
     const layer = new L.KML(kmlDoc);
     if ((layer.getLayers ? layer.getLayers().length : -1) === 0)
       toastMsg('KML caricato ma vuoto o senza geometrie: ' + name, '', undefined, 'sidebar');
@@ -1113,18 +1126,29 @@ function _startKmlEdit(origLayer, layerId, storeId) {
   const leaves = _flattenKMLLeafLayers(origLayer);
   if (!leaves.length) { toastMsg('Nessuna geometria modificabile', 'error', undefined, 'sidebar'); return; }
 
+  /* The working copies get LatLngs of their own. Leaflet.draw moves a vertex by writing into
+     the LatLng object itself, and these used to be the very objects of the layer on the map:
+     a vertex dragged and then cancelled stayed moved. Each copy is also tagged with the token
+     it was read from (_kmlTok) so the save can write untouched vertices back verbatim. */
   const tempGroup = L.featureGroup();
   leaves.forEach(l => {
     let clone;
     try {
       if (l instanceof L.Polygon) {
-        clone = L.polygon(l.getLatLngs(), { ...l.options });
+        clone = L.polygon(_kmlCloneLatLngs(l.getLatLngs(), l._kmlNode), { ...l.options });
       } else if (l instanceof L.Polyline) {
-        clone = L.polyline(l.getLatLngs(), { ...l.options });
+        clone = L.polyline(_kmlCloneLatLngs(l.getLatLngs(), l._kmlNode), { ...l.options });
       } else if (l instanceof L.Marker) {
-        clone = L.marker(l.getLatLng());
+        const ll = _kmlCloneLatLngs([l.getLatLng()], l._kmlNode)[0];
+        // Leaflet's default pin, not the layer's icon: on screen a KML point is often the 12 px
+        // dot of the legend colour, far too small to drag with a finger.
+        clone = L.marker(ll);
       }
-      if (clone) { clone._kmlProps = l._kmlProps; tempGroup.addLayer(clone); }
+      if (clone) {
+        clone._kmlProps = l._kmlProps; clone._kmlNode = l._kmlNode;
+        if (clone.getLatLngs) clone._kmlLens = _kmlRings(clone.getLatLngs()).map(r => r.length);
+        tempGroup.addLayer(clone);
+      }
     } catch(_) {}
   });
 
@@ -1323,7 +1347,6 @@ function _attachVertexDelete(layer, tempGroup) {
   const origInit = proto._initMarkers;
   const origAddHooks = proto.addHooks;
   const origRemoveHooks = proto.removeHooks;
-  const origMarkerClick = proto._onMarkerClick;
   const origMiddle = proto._createMiddleMarker;
 
   const shapeLen = h => { try { return (h._defaultShape() || []).length; } catch(_) { return 0; } };
@@ -1396,14 +1419,12 @@ function _attachVertexDelete(layer, tempGroup) {
     origRemoveHooks.call(this);
   };
 
-  /* After a structural change the library splices this._markers by the vertex index, which only
-     equals the position in that array when every vertex has a handle. Windowed, the geometry
-     still comes out right (_spliceLatLngs works on the true index) but the handle array does
-     not, so the window is rebuilt from the polyline as soon as the edit has finished. */
-  proto._onMarkerClick = function (e) {
-    origMarkerClick.call(this, e);
-    if (this._nvWindowed) setTimeout(() => rebuild(this), 0);
-  };
+  /* A single tap on a vertex does nothing. Leaflet.draw deletes the vertex on click, and on a
+     phone a click is any touch that stays under the drag threshold: the first touch of a drag
+     that did not take, and the first half of the double tap that the help and the edit bar
+     give as THE way to delete — which therefore removed the vertex on its first tap. Deleting
+     is the double tap of _attachVertexDelete, in both editors. */
+  proto._onMarkerClick = function () {};
 
   proto._createMiddleMarker = function (m1, m2) {
     const out = origMiddle.call(this, m1, m2);
@@ -1415,85 +1436,351 @@ function _attachVertexDelete(layer, tempGroup) {
   L.Edit.PolyVerticesEdit.__nvWindowed = true;
 })();
 
+/* ===== KML WRITE-BACK =====
+   An edit changes the file it came from in place: the coordinates, name and description of
+   the placemarks that were touched, and nothing else. The file used to be rebuilt from the
+   screen by tokml, which dropped folders, per-feature styles, icons, MultiGeometry, altitudes
+   and timestamps — from the very file the user then downloads as "the updated KML".
+   Work is done on a fresh parse of the current content, never on the document the layer on
+   the map was built from, so a failure half-way leaves nothing behind. */
+const _KML_MIME = 'application/vnd.google-earth.kml+xml';
+const _KML_GEOM_TAGS = ['Point', 'LineString', 'LinearRing', 'Polygon', 'MultiGeometry', 'Model', 'Track', 'MultiTrack'];
+// What may precede <description> in a Placemark (KML 2.2 schema order); anything else follows it.
+const _KML_BEFORE_DESC = ['name', 'visibility', 'open', 'author', 'link', 'address', 'AddressDetails', 'phoneNumber', 'Snippet'];
+
+function _kmlChild(parent, localName) {
+  return [...parent.children].find(c => c.localName === localName) || null;
+}
+function _kmlNewEl(parent, localName) {
+  return parent.ownerDocument.createElementNS(parent.namespaceURI, localName);
+}
+/* The same element in another parse of the same content: the n-th of its name in both. */
+function _kmlFind(doc, node) {
+  if (!node) return null;
+  const all = node.ownerDocument.getElementsByTagNameNS('*', node.localName);
+  const i = Array.prototype.indexOf.call(all, node);
+  return i < 0 ? null : (doc.getElementsByTagNameNS('*', node.localName)[i] || null);
+}
+
+/* The coordinate sources of a geometry element, one per ring, in the order L.KML read them
+   and Leaflet nests them: outer boundaries first, then holes. */
+function _kmlRingEls(node) {
+  if (!node) return [];
+  const coordsOf = parent => parent.getElementsByTagNameNS('*', 'coordinates')[0] || null;
+  if (node.localName === 'Polygon') {
+    const outer = [...node.getElementsByTagNameNS('*', 'outerBoundaryIs')].map(coordsOf);
+    const inner = [...node.getElementsByTagNameNS('*', 'innerBoundaryIs')].map(coordsOf);
+    return outer.concat(inner);
+  }
+  if (node.localName === 'Track') return [node];
+  return [coordsOf(node)];
+}
+function _kmlTokens(el) {
+  if (!el) return [];
+  if (el.localName === 'Track') return [...el.children].filter(c => c.localName === 'coord').map(c => c.textContent.trim());
+  // Same split and the same filter as L.KML's _read_coords, so token i is LatLng i.
+  return el.textContent.split(/[\s\n]+/).filter(t => t.split(',').length >= 2);
+}
+
+/* Copies of a layer's LatLngs, each one tagged with the token it was read from. */
+function _kmlCloneLatLngs(latlngs, node) {
+  const sources = _kmlRingEls(node).map(_kmlTokens);
+  let r = 0;
+  const ring = a => {
+    const toks = sources[r++] || [];
+    return a.map((ll, i) => {
+      const c = L.latLng(ll.lat, ll.lng, ll.alt);
+      if (toks[i] !== undefined) { c._kmlTok = toks[i]; c._kmlLat = ll.lat; c._kmlLng = ll.lng; c._kmlIdx = i; }
+      return c;
+    });
+  };
+  const walk = a => (a.length && Array.isArray(a[0])) ? a.map(walk) : ring(a);
+  return walk(latlngs);
+}
+
+/* Whether a working copy differs from the file: a vertex moved, inserted or removed. Read from
+   the geometry rather than from Leaflet.draw's `edited` flag, which only the library's own
+   handlers set (a programmatic setLatLngs, for one, leaves it false). */
+function _kmlRings(lls) { return (lls.length && Array.isArray(lls[0])) ? [].concat(...lls.map(_kmlRings)) : [lls]; }
+function _kmlCloneChanged(c) {
+  if (c instanceof L.Marker) return !_kmlUnmoved(c.getLatLng());
+  const rings = _kmlRings(c.getLatLngs()), lens = c._kmlLens || [];
+  if (rings.length !== lens.length) return true;
+  return rings.some((r, i) => r.length !== lens[i] || r.some(ll => !_kmlUnmoved(ll)));
+}
+
+const _kmlNum = v => String(+(+v).toFixed(8));
+const _kmlUnmoved = ll => ll._kmlTok !== undefined && ll.lat === ll._kmlLat && ll.lng === ll._kmlLng;
+function _kmlTokAlt(tok, track) {
+  const p = String(tok).trim().split(track ? /\s+/ : ',');
+  return p.length > 2 && p[2] !== '' ? p[2] : undefined;
+}
+/* A vertex inserted from a midpoint has no altitude of its own; it takes the mean of its
+   neighbours', or the one neighbour that has one, so a 3D line does not dip to zero there. */
+function _kmlFillAlts(lls, track) {
+  const alts = lls.map(ll => ll._kmlTok !== undefined ? _kmlTokAlt(ll._kmlTok, track) : undefined);
+  return lls.map((ll, i) => {
+    if (ll._kmlTok !== undefined) return alts[i];
+    let a, b;
+    for (let k = i - 1; k >= 0 && a === undefined; k--) a = alts[k];
+    for (let k = i + 1; k < lls.length && b === undefined; k++) b = alts[k];
+    if (a !== undefined && b !== undefined && isFinite(+a) && isFinite(+b)) return _kmlNum((+a + +b) / 2);
+    return a !== undefined ? a : b;
+  });
+}
+function _kmlFmt(ll, alt, track) {
+  if (_kmlUnmoved(ll)) return ll._kmlTok;
+  const parts = [_kmlNum(ll.lng), _kmlNum(ll.lat)];
+  if (alt !== undefined) parts.push(alt);
+  return parts.join(track ? ' ' : ',');
+}
+function _kmlSetCoords(el, lls, closeRing) {
+  if (!el) return;
+  const alts = _kmlFillAlts(lls, false);
+  const toks = lls.map((ll, i) => _kmlFmt(ll, alts[i], false));
+  if (closeRing && toks.length) toks.push(toks[0]);
+  const old = el.textContent;
+  const lead = (old.match(/^\s*/) || [''])[0], trail = (old.match(/\s*$/) || [''])[0];
+  el.textContent = lead + toks.join(/\n/.test(old.trim()) ? '\n' : ' ') + trail;
+}
+
+/* A gx:Track keeps one <when>, one <gx:coord> and optionally one <gx:angles> and one value
+   per ExtendedData array for every point, in parallel. A surviving point keeps all of its
+   entries; an inserted one gets an interpolated time and its neighbour's other values. */
+function _kmlWriteTrack(track, lls) {
+  const kids = [...track.children];
+  const coords = kids.filter(c => c.localName === 'coord');
+  const n = coords.length;
+  const src = lls.map(ll => (ll._kmlTok !== undefined && ll._kmlIdx < n) ? ll._kmlIdx : -1);
+  const near = (k, step) => { for (let j = k + step; j >= 0 && j < src.length; j += step) if (src[j] >= 0) return src[j]; return -1; };
+  const alts = _kmlFillAlts(lls, true);
+  const rebuild = (list, make) => {
+    if (list.length !== n || !n) return;
+    const parent = list[0].parentNode, ref = list[0];
+    const fresh = lls.map((ll, k) => src[k] >= 0 && list[src[k]] ? list[src[k]].cloneNode(true) : make(k, list));
+    fresh.forEach(f => parent.insertBefore(f, ref));
+    list.forEach(e => parent.removeChild(e));
+  };
+  const copyNeighbour = (k, list) => {
+    const j = near(k, -1) >= 0 ? near(k, -1) : near(k, 1);
+    return list[j >= 0 ? j : 0].cloneNode(true);
+  };
+  rebuild(kids.filter(c => c.localName === 'when'), (k, list) => {
+    const a = near(k, -1), b = near(k, 1);
+    const e = copyNeighbour(k, list);
+    const ta = a >= 0 ? Date.parse(list[a].textContent) : NaN, tb = b >= 0 ? Date.parse(list[b].textContent) : NaN;
+    if (isFinite(ta) && isFinite(tb)) e.textContent = new Date((ta + tb) / 2).toISOString();
+    return e;
+  });
+  rebuild(coords, k => {
+    const e = coords[0].cloneNode(false);
+    e.textContent = _kmlFmt(lls[k], alts[k], true);
+    return e;
+  });
+  // A moved point keeps its slot but needs the new position.
+  [...track.children].filter(c => c.localName === 'coord').forEach((c, k) => {
+    if (lls[k] && !_kmlUnmoved(lls[k])) c.textContent = _kmlFmt(lls[k], alts[k], true);
+  });
+  rebuild(kids.filter(c => c.localName === 'angles'), copyNeighbour);
+  [...track.getElementsByTagNameNS('*', 'SimpleArrayData')].forEach(sad =>
+    rebuild([...sad.children].filter(c => c.localName === 'value'), copyNeighbour));
+}
+
+function _kmlWriteGeometry(node, layer) {
+  if (!node) return;
+  const ln = node.localName;
+  if (ln === 'Point') { _kmlSetCoords(_kmlRingEls(node)[0], [layer.getLatLng()], false); return; }
+  if (ln === 'Track') { _kmlWriteTrack(node, layer.getLatLngs()); return; }
+  if (ln === 'LineString') { _kmlSetCoords(_kmlRingEls(node)[0], layer.getLatLngs(), false); return; }
+  if (ln === 'Polygon') {
+    const lls = layer.getLatLngs();
+    // One polygon is [outer, ...holes]; several outer boundaries come back as [[outer], ...].
+    const rings = L.LineUtil.isFlat(lls[0]) ? lls : lls.map(p => p[0]);
+    const els = _kmlRingEls(node);
+    rings.forEach((ring, i) => { if (els[i]) _kmlSetCoords(els[i], ring, true); });
+  }
+}
+
+function _kmlSetText(el, text) {
+  while (el.firstChild) el.removeChild(el.firstChild);
+  const doc = el.ownerDocument;
+  if (!/[<&]/.test(text)) { el.appendChild(doc.createTextNode(text)); return; }
+  // CDATA keeps markup as written; a literal "]]>" is split across two sections.
+  const parts = text.split(']]>');
+  parts.forEach((p, i) => el.appendChild(doc.createCDATASection((i ? '>' : '') + p + (i < parts.length - 1 ? ']]' : ''))));
+}
+function _kmlSetName(pm, name) {
+  let el = _kmlChild(pm, 'name');
+  if (!name) { if (el) pm.removeChild(el); return; }
+  if (!el) { el = _kmlNewEl(pm, 'name'); pm.insertBefore(el, pm.firstChild); }
+  el.textContent = name;
+}
+function _kmlSetDescription(pm, desc) {
+  let el = _kmlChild(pm, 'description');
+  if (!desc) { if (el) pm.removeChild(el); return; }
+  if (!el) {
+    el = _kmlNewEl(pm, 'description');
+    const ref = [...pm.children].find(c => _KML_BEFORE_DESC.indexOf(c.localName) === -1);
+    pm.insertBefore(el, ref || null);
+  }
+  _kmlSetText(el, desc);
+}
+/* The measurements as ExtendedData, replacing the ones a previous pass wrote. */
+function _kmlSetGeomData(pm, props) {
+  let ext = _kmlChild(pm, 'ExtendedData');
+  const has = GEOM_PROP_KEYS.some(k => props[k] !== undefined);
+  if (!ext && !has) return;
+  if (!ext) {
+    ext = _kmlNewEl(pm, 'ExtendedData');
+    const ref = [...pm.children].find(c => _KML_GEOM_TAGS.indexOf(c.localName) !== -1);
+    pm.insertBefore(ext, ref || null);
+  }
+  [...ext.children].filter(c => c.localName === 'Data' && GEOM_PROP_KEYS.indexOf(c.getAttribute('name')) !== -1)
+    .forEach(c => ext.removeChild(c));
+  GEOM_PROP_KEYS.forEach(k => {
+    if (props[k] === undefined || props[k] === null) return;
+    const d = _kmlNewEl(ext, 'Data'), v = _kmlNewEl(ext, 'value');
+    d.setAttribute('name', k); v.textContent = String(props[k]);
+    d.appendChild(v); ext.appendChild(d);
+  });
+  if (!ext.children.length) pm.removeChild(ext);
+}
+/* Fresh measurements on a placemark, the way every export does it: raw values in
+   ExtendedData, the readable block after the user's own description. */
+function _kmlStampPlacemark(pm, layers, ownDesc) {
+  const geoms = layers.map(l => { try { return l.toGeoJSON().geometry; } catch (_) { return null; } }).filter(Boolean);
+  if (!geoms.length) return;
+  const f = { type: 'Feature', properties: { description: ownDesc || '' },
+              geometry: geoms.length === 1 ? geoms[0] : { type: 'GeometryCollection', geometries: geoms } };
+  stampGeomInfo(f);
+  _kmlSetDescription(pm, f.properties.description || '');
+  _kmlSetGeomData(pm, f.properties);
+}
+function _kmlSerialize(doc, original) {
+  let s = new XMLSerializer().serializeToString(doc);
+  const decl = String(original).match(/^﻿?\s*(<\?xml[^>]*\?>)/);
+  if (decl && !/^<\?xml/.test(s)) s = decl[1] + '\n' + s;
+  return s;
+}
+
+/* Swap the layer on the map for one built from the new content, keeping everything the
+   legend says about it: stacking pane, visibility, hollow, opacity, and the colour only if the
+   user chose one — the file's own styles otherwise, as when it was loaded. Then store it and
+   offer the download, because the file on the phone is never written. */
+function _commitKmlContent(layerId, storeId, newContent, oldLayer) {
+  const item = document.querySelector(`#layer-list .layer-item[data-id="${layerId}"]`);
+  const kmlDoc = new DOMParser().parseFromString(newContent, 'text/xml');
+  if (kmlDoc.querySelector('parsererror')) throw new Error('KML non valido dopo la modifica');
+  const newLayer = new L.KML(kmlDoc);
+  enhanceKMLLayer(newLayer, _extractPlacemarkProps(kmlDoc), kmlDoc);
+  if (item && item.querySelector('.layer-hollow.active')) _setLayerHollow(newLayer, true);
+  const visible = !item || item.querySelector('input[type=checkbox]').checked;
+  try { map.removeLayer(oldLayer); } catch (_) {}
+  newLayer.addTo(map);
+  if (item && item.dataset.ovPane) _assignOverlayPaneToPaths(newLayer, item.dataset.ovPane);
+  loadedLayers[layerId] = newLayer;
+  _rawContentById[layerId] = newContent;
+  const entry = storeId ? _loadOverlayStore().find(e => e.id === storeId) : null;
+  if (entry && entry.color) setLayerColor(newLayer, entry.color);
+  const op = item && item.querySelector('.layer-opacity');
+  setLayerOpacity(newLayer, op ? parseInt(op.value, 10) : 80);
+  if (!visible) map.removeLayer(newLayer);
+
+  const name = item ? item.querySelector('.layer-name').textContent : 'layer';
+  const stem = name.replace(/\.(kml|kmz)$/i, '') || 'layer';
+  const offer = stored => showConfirmModal(
+    (stored ? 'Modifica salvata nell’app.' : 'Modifica applicata alla mappa, ma non salvata nell’app: al riavvio andrà persa.') +
+    ' Il file sul telefono non cambia: se ti serve aggiornato, scaricalo (va nella cartella Download come ' + stem + '.kml).',
+    () => downloadFile(newContent, stem + '.kml', _KML_MIME),
+    { okLabel: 'Scarica', cancelLabel: 'Non ora', danger: false });
+  if (!storeId) { offer(true); return Promise.resolve(); }
+  return _writeOverlayContent(storeId, newContent).then(offer).catch(() => offer(false));
+}
+
+/* The draw toolbar's edit mode gets the same vertex handles as the KML editor: the larger
+   touch-sized icon and the double tap to delete. It used to get the library's own, small
+   handles and the tap-to-delete above. EDITSTART fires before the handler enables the layers,
+   hence the deferral. */
+map.on(L.Draw.Event.EDITSTART, () => {
+  setTimeout(() => { drawnItems.eachLayer(l => { try { _attachVertexDelete(l, null); } catch (_) {} }); }, 0);
+});
+
 function _saveKmlEdit() {
   if (!_kmlEditActive) return;
   const { handler, tempGroup, layerId, storeId, origLayer } = _kmlEditActive;
 
+  // Read before save(): Leaflet.draw's save clears the flag on every layer it reports.
+  const clones = tempGroup.getLayers();
+  const edited = clones.filter(c => c._kmlNode && (c.edited || _kmlCloneChanged(c)));
   handler.save();
   handler.disable();
-
-  const features = [];
-  tempGroup.eachLayer(l => {
-    try {
-      const gj = l.toGeoJSON ? l.toGeoJSON() : null;
-      if (!gj) return;
-      gj.properties = gj.properties || {};
-      if (l._kmlProps) Object.assign(gj.properties, l._kmlProps);
-      /* Stamped after the merge, not before: _kmlProps carries the measurements of the shape
-         as it was loaded, and the whole point of this pass is that the shape just changed. */
-      stampGeomInfo(gj);
-      features.push(gj);
-    } catch(_) {}
-  });
 
   try { map.removeLayer(tempGroup); } catch(_) {}
   const bar = document.getElementById('kml-edit-bar');
   if (bar) bar.classList.add('hidden');
   _kmlEditActive = null;
 
-  if (!features.length) {
-    try { origLayer.addTo(map); } catch(_) {}
-    loadedLayers[layerId] = origLayer;
-    toastMsg('Nessuna geometria: modifica annullata', 'warn', undefined, 'sidebar');
-    return;
-  }
+  const restore = () => { try { origLayer.addTo(map); } catch(_) {} loadedLayers[layerId] = origLayer; };
+  if (!edited.length) { restore(); toastMsg('Nessuna modifica da salvare', '', undefined, 'sidebar'); return; }
 
-  /* Styled and written through TOKML_OPTS, like every other export in the app. Without the
-     styling pass the rebuilt file carried no <Style> at all: the layer kept its colour on
-     screen, because that lives in the legend entry, but the file exported afterwards opened
-     unstyled in an earth browser — an edit to the vertices silently stripped the appearance.
-     The colour applied is the one the layer has now, which is what the user is looking at. */
-  const _row  = document.querySelector(`[data-id="${layerId}"]`);
-  const _rowC = _row && _row.querySelector('.layer-color');
-  const _rowO = _row && _row.querySelector('.layer-opacity');
-  const _kmlColor   = (_rowC && _rowC.value) || '#4f8ef7';
-  const _kmlOpacity = _rowO ? (parseInt(_rowO.value, 10) || 100) / 100 : 1;
-  if (typeof _styleFeatureForKml === 'function') {
-    features.forEach(f => { try { _styleFeatureForKml(f, _kmlColor, _kmlOpacity); } catch(_) {} });
-  }
-  const newKmlContent = tokml({ type: 'FeatureCollection', features }, TOKML_OPTS);
   try {
-    const kmlDoc = new DOMParser().parseFromString(newKmlContent, 'text/xml');
-    const newLayer = new L.KML(kmlDoc);
-    enhanceKMLLayer(newLayer, _extractPlacemarkProps(kmlDoc), kmlDoc);
-    newLayer.addTo(map);
-    loadedLayers[layerId] = newLayer;
-    /* The ⬇ button reads from here, so the edited geometry has to land before the user can
-       press it — otherwise the export writes the shape as it was before the edit. */
-    _rawContentById[layerId] = newKmlContent;
-    const _editItem = document.querySelector(`[data-id="${layerId}"]`);
-    if (_editItem) {
-      const _cp = _editItem.querySelector('.layer-color');
-      if (_cp) setLayerColor(newLayer, _cp.value);
-      const _op = _editItem.querySelector('.layer-opacity');
-      if (_op) setLayerOpacity(newLayer, parseInt(_op.value));
-    }
-    if (storeId) {
-      /* Edited geometry goes back to the content store (IndexedDB, or inline on fallback).
-         The write is async now, so confirm only once it has actually landed: announcing
-         "saved" before the write completes would claim durability the edit does not yet
-         have. The old synchronous path could not report a failed write at all. */
-      // false = stored nowhere, and _writeOverlayContent has already said so in an error toast.
-      _writeOverlayContent(storeId, newKmlContent)
-        .then(saved => { if (saved) toastMsg('KML salvato', 'success', undefined, 'sidebar'); })
-        .catch(() => toastMsg('KML modificato, ma non salvato in memoria', 'warn', undefined, 'sidebar'));
-    } else {
-      toastMsg('KML salvato', 'success', undefined, 'sidebar');
-    }
+    const original = _rawContentById[layerId];
+    const doc = new DOMParser().parseFromString(original, 'text/xml');
+    if (doc.querySelector('parsererror')) throw new Error('file non leggibile');
+    const touched = new Map();   // placemark in the fresh doc -> its placemark in the layer's doc
+    edited.forEach(c => {
+      const node = _kmlFind(doc, c._kmlNode);
+      if (!node) throw new Error('geometria non trovata nel file');
+      _kmlWriteGeometry(node, c);
+      const pm = _kmlPlacemarkOf(node);
+      if (pm) touched.set(pm, _kmlPlacemarkOf(c._kmlNode));
+    });
+    /* Stamped after the coordinates, from every part of the placemark as it is now: the
+       measurements a MultiGeometry carries describe all of its parts, edited or not. */
+    touched.forEach((origPm, pm) => {
+      const parts = clones.filter(c => c._kmlNode && _kmlPlacemarkOf(c._kmlNode) === origPm);
+      const d = _kmlChild(pm, 'description');
+      _kmlStampPlacemark(pm, parts, stripGeomDescription(d ? d.textContent : ''));
+    });
+    _commitKmlContent(layerId, storeId, _kmlSerialize(doc, original), origLayer);
   } catch(err) {
-    try { origLayer.addTo(map); } catch(_) {}
-    loadedLayers[layerId] = origLayer;
+    restore();
     toastMsg('Errore di salvataggio: ' + (err.message || ''), 'error', undefined, 'sidebar');
+  }
+}
+
+/* Name and description of one placemark, from its popup. The description is written as the
+   user typed it, markup included; a measurement block a previous export appended is not shown
+   for editing — it is recomputed from the geometry instead, so it cannot go stale. */
+function _editKmlPlacemarkText(leaf, name, desc) {
+  const root = leaf && leaf._nvKmlRoot;
+  const layerId = root ? Object.keys(loadedLayers).find(k => loadedLayers[k] === root) : null;
+  if (!layerId || !leaf._kmlNode) { toastMsg('Elemento non modificabile', 'error', undefined, 'sidebar'); return Promise.resolve(); }
+  if (_kmlEditActive && _kmlEditActive.layerId === layerId) {
+    toastMsg('Chiudi prima la modifica dei vertici', 'warn', undefined, 'sidebar'); return Promise.resolve();
+  }
+  const item = document.querySelector(`#layer-list .layer-item[data-id="${layerId}"]`);
+  const storeId = item ? (item.dataset.storeId || '') : '';
+  try {
+    const original = _rawContentById[layerId];
+    const doc = new DOMParser().parseFromString(original, 'text/xml');
+    const node = _kmlFind(doc, leaf._kmlNode);
+    const pm = node && _kmlPlacemarkOf(node);
+    if (!pm) throw new Error('elemento non trovato nel file');
+    const oldDesc = (_kmlChild(pm, 'description') || {}).textContent || '';
+    _kmlSetName(pm, String(name || '').trim());
+    if (oldDesc.indexOf(GEOM_DESC_MARK) !== -1) {
+      const origPm = _kmlPlacemarkOf(leaf._kmlNode);
+      const parts = _flattenKMLLeafLayers(root).filter(l => l._kmlNode && _kmlPlacemarkOf(l._kmlNode) === origPm);
+      _kmlStampPlacemark(pm, parts, desc);
+    } else {
+      _kmlSetDescription(pm, desc);
+    }
+    try { map.closePopup(); } catch (_) {}
+    return _commitKmlContent(layerId, storeId, _kmlSerialize(doc, original), root);
+  } catch (err) {
+    toastMsg('Errore di salvataggio: ' + (err.message || ''), 'error', undefined, 'sidebar');
+    return Promise.resolve();
   }
 }
 

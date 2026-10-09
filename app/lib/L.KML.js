@@ -1,5 +1,6 @@
 /*!
 	Copyright (c) 2011-2015, Pavel Shramov, Bruno Bergot - MIT licence
+	Modified 2026-10 for GISCatasto (changes marked "GISCatasto patch").
 */
 
 L.KML = L.FeatureGroup.extend({
@@ -285,18 +286,29 @@ L.Util.extend(L.KML, {
 	parseLineString: function (line, xml, options) {
 		var coords = this.parseCoords(line);
 		if (!coords.length) { return; }
-		return new L.Polyline(coords, options);
+		return this._tag(new L.Polyline(coords, options), line);
+	},
+
+	/* GISCatasto patch: every geometry layer remembers the KML element it was read from.
+	   The layers come out folders first and lines before points, not in document order, so
+	   order alone cannot pair a layer with its Placemark; the element can, and it is also
+	   where an edit has to be written back. */
+	_tag: function (layer, node) {
+		if (layer) { layer._kmlNode = node; }
+		return layer;
 	},
 
 	parseTrack: function (line, xml, options) {
-		var el = xml.getElementsByTagName('gx:coord');
-		if (el.length === 0) { el = xml.getElementsByTagName('coord'); }
+		/* GISCatasto patch: the track's own coordinates. Upstream searched the whole document,
+		   so every track in a file was drawn through the points of all of them. */
+		var el = line.getElementsByTagName('gx:coord');
+		if (el.length === 0) { el = line.getElementsByTagName('coord'); }
 		var coords = [];
 		for (var j = 0; j < el.length; j++) {
 			coords = coords.concat(this._read_gxcoords(el[j]));
 		}
 		if (!coords.length) { return; }
-		return new L.Polyline(coords, options);
+		return this._tag(new L.Polyline(coords, options), line);
 	},
 
 	parsePoint: function (line, xml, options) {
@@ -305,7 +317,7 @@ L.Util.extend(L.KML, {
 			return;
 		}
 		var ll = el[0].childNodes[0].nodeValue.split(',');
-		return new L.KMLMarker(new L.LatLng(ll[1], ll[0]), options);
+		return this._tag(new L.KMLMarker(new L.LatLng(ll[1], ll[0]), options), line);
 	},
 
 	parsePolygon: function (line, xml, options) {
@@ -331,9 +343,13 @@ L.Util.extend(L.KML, {
 			options.fill = true;
 		}
 		if (polys.length === 1) {
-			return new L.Polygon(polys.concat(inner), options);
+			return this._tag(new L.Polygon(polys.concat(inner), options), line);
 		}
-		return new L.MultiPolygon(polys, options);
+		/* GISCatasto patch: L.MultiPolygon is Leaflet 0.7 and does not exist in 1.x, so a
+		   Polygon with more than one outer boundary threw and the whole file failed to load.
+		   Leaflet 1.x takes the outer rings as a multi-polygon directly (holes cannot be
+		   attributed to an outer ring here, so they are left out, as upstream did). */
+		return this._tag(new L.Polygon(polys.map(function (p) { return [p]; }), options), line);
 	},
 
 	getLatLngs: function (xml) {

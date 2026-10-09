@@ -184,7 +184,7 @@ function convertCoord() {
       `<span class="r-label">MGRS</span><br><span class="r-val">${mgrsStr}</span>`;
   } catch(err) {
     box.className = 'result-box show'; box.style.borderColor = 'var(--danger)';
-    box.innerHTML = `<span style="color:var(--danger)">Unrecognized format.<br>Check your input.</span>`;
+    box.innerHTML = `<span style="color:var(--danger)">Formato non riconosciuto.<br>Controlla i valori inseriti.</span>`;
     setTimeout(() => { box.style.borderColor = ''; }, 2000);
   }
 }
@@ -693,7 +693,7 @@ function _renderBookmarks() {
 
     const delBtn = document.createElement('button');
     delBtn.className = 'bookmark-del';
-    delBtn.title = 'Remove';
+    delBtn.title = 'Rimuovi';
     delBtn.textContent = '\u2715';
 
     info.appendChild(nameDiv);

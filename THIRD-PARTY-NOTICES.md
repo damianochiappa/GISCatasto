@@ -11,6 +11,7 @@ GISCatasto includes the following open-source libraries. Their licenses are repr
 ## leaflet-rotate (Raruto)
 - License: **GPL-3.0** — primary reason this project is GPL v3
 - https://github.com/Raruto/leaflet-rotate
+- Modified (2026-10): `L.Marker._initInteraction` installs the rotation-aware drag handlers also on markers made draggable after they were added (see the comment in `app/lib/leaflet-rotate.js`)
 
 ## Leaflet.draw
 - License: MIT
@@ -31,6 +32,7 @@ GISCatasto includes the following open-source libraries. Their licenses are repr
 ## L.KML (Pavel Shramov, Bruno Bergot)
 - License: MIT
 - https://github.com/shramov/leaflet-plugins
+- Modified (2026-10): each geometry layer keeps a reference to the KML element it was read from; `parseTrack` reads only its own track; a Polygon with several outer boundaries builds a Leaflet 1.x multi-polygon instead of the removed `L.MultiPolygon` (see the comments in `app/lib/L.KML.js`)
 
 ## OpenLayers
 - License: BSD-2-Clause

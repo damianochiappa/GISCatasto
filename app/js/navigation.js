@@ -156,7 +156,7 @@
     if (navDestMarker) map.removeLayer(navDestMarker);
     navDestMarker = L.circleMarker([lat, lon], {
       radius: 10, color: '#e05252', fillColor: '#e05252', fillOpacity: 0.85, weight: 2
-    }).addTo(map).bindPopup('<b>Destination</b><br>' + _xmlEsc(label));   // label may come from the geocoder
+    }).addTo(map).bindPopup('<b>Destinazione</b><br>' + _xmlEsc(label));   // label may come from the geocoder
     _setStatus('Destinazione impostata: premi Avvia', 'var(--accent)');
   }
 
@@ -191,7 +191,8 @@
       const _z = Math.max(map.getZoom(), 17);
       map.setView(ll, _z, { animate: true });
     } catch (e) {
-      _setStatus('Errore: ' + e.message, 'var(--danger)');
+      // fetch() rejects with the browser's own English TypeError when there is no network.
+      _setStatus('Errore: ' + (e instanceof TypeError ? 'servizio dei percorsi non raggiungibile' : e.message), 'var(--danger)');
     }
   }
 
@@ -268,7 +269,7 @@
     onAdd() {
       const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-nav');
       const a   = L.DomUtil.create('a', '', div);
-      a.href  = '#'; a.title = 'Navigation';
+      a.href  = '#'; a.title = 'Navigazione';
       a.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3,11 22,2 13,21 11,13 3,11"/></svg>';
       L.DomEvent.disableClickPropagation(div);
       L.DomEvent.on(a, 'click', e => {

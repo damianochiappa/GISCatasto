@@ -1008,6 +1008,25 @@ body:has(#flight-panel:not(.hidden)) #toast     { bottom: calc(var(--lane-bottom
 /* Actions bar (Cancel/Finish) must start after the zoomed toolbar width: 30px × 1.333 = 40px */
 .leaflet-draw-section .leaflet-draw-actions { left: 40px; }
 .leaflet-right .leaflet-draw-section .leaflet-draw-actions { right: 40px; left: auto; }
+/* Save / Cancel / Finish / Undo: as tall as the toolbar button they sit beside (40 px, zoomed
+   30), not the library's 26–30 px grey strip with 11 px type that was the one control on the
+   map outside the app's theme. The confirming action carries the accent, as .btn-primary does;
+   the titles are the app's own (map.js, _italianDrawStrings). */
+.leaflet-draw-actions a,
+.leaflet-touch .leaflet-draw-actions a,
+.leaflet-draw-actions-top a,
+.leaflet-draw-actions-bottom a {
+  height: 40px; line-height: 40px;
+  padding: 0 14px; font-size: 13px; font-weight: 600;
+  background-color: var(--surface2); color: var(--text);
+  border-left: 1px solid var(--border);
+}
+.leaflet-draw-actions a:active { background-color: var(--surface3); }
+.leaflet-draw-actions a[title="Salva le modifiche"],
+.leaflet-draw-actions a[title="Termina il disegno"] { background-color: var(--accent); color: #fff; }
+.leaflet-draw-actions li:first-child a { border-radius: 0; }
+.leaflet-draw-actions li:last-child a { border-radius: 0 var(--r-sm) var(--r-sm) 0; }
+.leaflet-draw-actions { box-shadow: var(--shadow-sm); border-radius: 0 var(--r-sm) var(--r-sm) 0; }
 .leaflet-draw-toolbar a, .leaflet-edit-toolbar a {
   width: 30px !important; height: 30px !important;
   line-height: 30px !important; background-size: 300px 30px !important;
@@ -1092,13 +1111,25 @@ a.polyline-measure-controlOnBgColor:hover {
   font-weight: 700; letter-spacing: .3px;
   box-shadow: 0 2px 8px rgba(76,175,125,.3);
 }
+/* A finger-sized target for the two actions in a drawing's popup, one of which deletes. */
+.draw-save-btn, .draw-del-btn { min-height: 40px; }
+/* Select / deselect in a parcel's popup: the most tapped button in the app was 20 px tall. */
+.wfs-sel-btn {
+  width: 100%; min-height: 40px; padding: 6px 10px; cursor: pointer;
+  background: var(--accent-grd); color: #fff; border: none; border-radius: var(--r-sm);
+  box-shadow: 0 2px 8px rgba(79,142,247,.3);
+  font-size: 13px; font-weight: 700; letter-spacing: .3px;
+}
+.wfs-sel-btn:active { transform: scale(.97); }
 .draw-save-btn:hover { filter: brightness(1.1); }
 .draw-save-btn:active { transform: scale(.97); }
 .draw-del-btn {
   display: block; width: 100%;
   margin-top: 6px;
   padding: 8px; font-size: 12px;
-  background: #ef5350;
+  /* The danger button of the rest of the app (.btn-danger), as Save beside it is .btn-success. */
+  background: linear-gradient(135deg, #ef5350 0%, #c62828 100%);
+  box-shadow: 0 2px 8px rgba(239,83,80,.3);
   color: #fff;
   border: none; border-radius: var(--r-sm); cursor: pointer;
   font-weight: 700; letter-spacing: .3px;
@@ -1284,7 +1315,10 @@ a.polyline-measure-controlOnBgColor:hover {
 #sel-badge-count { color: #ffcc00; font-size: 13px; font-weight: 600; }
 #sel-badge-export, #sel-badge-close {
   background: none; border: none; cursor: pointer;
-  color: var(--text-muted); font-size: 13px; padding: 2px 4px; border-radius: 4px;
+  color: var(--text-muted); font-size: 13px; padding: 2px 6px; border-radius: 4px;
+  /* 32 px like the mode toggle beside them: the badge (32 + 2×6 padding + border = 46 px)
+     still fits its 48 px lane, which the toast clearance is computed from. */
+  min-height: 32px; min-width: 36px;
 }
 #sel-badge-export:hover { color: #ffcc00; }
 #sel-badge-export.lit {
@@ -1298,7 +1332,8 @@ a.polyline-measure-controlOnBgColor:hover {
 #sel-badge-close:hover  { color: var(--danger); }
 #sel-mode-btn {
   background: none; border: 1px solid rgba(255,204,0,.6); cursor: pointer;
-  color: rgba(255,204,0,.8); font-size: 12px; padding: 2px 8px; border-radius: 10px;
+  color: rgba(255,204,0,.8); font-size: 12px; padding: 2px 10px; border-radius: 16px;
+  min-height: 32px;   /* was 20 px tall: a toggle used with a thumb, on the map */
   transition: color .15s, border-color .15s, background .15s;
 }
 #sel-mode-btn:hover { color: #ffcc00; border-color: rgba(255,204,0,.7); }
@@ -1946,6 +1981,7 @@ a.polyline-measure-controlOnBgColor:hover {
 
   /* Compact buttons — overrides base .btn and the mobile-portrait override at max-width:640 */
   .btn { padding: 6px 12px; font-size: 12px; min-height: 28px; }
+  .draw-save-btn, .draw-del-btn, .wfs-sel-btn { min-height: 32px; }
   .tab-btn { padding: 7px 3px; font-size: 8px; }
   .mt-tab { padding: 6px 5px; font-size: 10px; }
   /* Fields stay one step below the phone type scale above: the height here is 500px at
@@ -2028,3 +2064,21 @@ a.polyline-measure-controlOnBgColor:hover {
    identical to one that is simply slow, and this is the difference the user can see. */
 .layer-item.wfs-loading .layer-name { animation: wfs-pulse 1.2s ease-in-out infinite; }
 @keyframes wfs-pulse { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
+
+/* A measure point whose tooltip has nothing to say on a touch screen (see _plMeasure in map.js)
+   would otherwise open an empty bubble when tapped. */
+.leaflet-tooltip.polyline-measure-popupTooltip:empty { display: none; }
+
+/* Portrait phone: the controls still below a fingertip after the touch lot (measured by
+   test-tapsize at 412 px). Kept in its own block at the very end so no later base rule of
+   equal specificity can undo it, and limited by width so the landscape block above, which
+   compacts a 500 px-high screen on purpose, is left as it is. */
+@media (max-width: 640px) {
+  .tab-btn { min-height: 44px; }
+  .field input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),
+  .field select { min-height: 44px; }
+  .draw-desc-input { min-height: 40px; }
+  .icon-btn { width: 40px; height: 40px; }
+  .draw-color-row input[type=color] { width: 44px; height: 36px; }
+  .sb-arrow { min-width: 36px; }
+}

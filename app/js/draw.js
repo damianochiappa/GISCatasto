@@ -216,6 +216,62 @@ function _openDrawPopup(layer, type) {
   layer.openPopup();
 }
 
+/* ===== ONE TAP, ONE VERTEX =====
+   On a phone a short tap reaches Draw.Polyline twice: first as a touch (Leaflet.draw's
+   TouchExtend), which adds the vertex, then as the compatibility mouse events the browser sends
+   after a tap, which land on the vertex just added. For a line that second arrival — the click
+   on the new last vertex, which the library binds to "finish" — closed the line at its second
+   point; for a polygon the mouseup added the same vertex again, a zero-length edge at every tap.
+   A long press sends no compatibility events, which is why holding the finger down drew
+   normally. Mouse events, and a finish requested by a click, that follow a touch within 800 ms
+   are dropped. Finishing on purpose by touch (tapping the last point) calls _finishShape with no
+   event and is untouched; a real mouse never follows a touch, so the desktop is unaffected. */
+(function _patchDrawTouchCompat() {
+  const P = L.Draw && L.Draw.Polyline && L.Draw.Polyline.prototype;
+  if (!P || P.__nvTouchCompat) return;
+  const COMPAT_MS = 800;
+  const origTouch = P._onTouch, origDown = P._onMouseDown, origUp = P._onMouseUp, origFinish = P._finishShape;
+  const recent = h => h._nvTouchAt && (Date.now() - h._nvTouchAt) < COMPAT_MS;
+  /* The vertex is added when the finger LIFTS, and only if it did not travel: the library added
+     it on touchstart, before anyone could know whether the touch was a tap or the start of a pan,
+     so moving the map while drawing dropped a point where the finger first landed. A second
+     finger (a pinch) cancels it too. */
+  const TAP_PX = 10;
+  P._onTouch = function (e) {
+    this._nvTouchAt = Date.now();
+    const oe = e && e.originalEvent, t = oe && oe.touches && oe.touches[0];
+    if (!t || oe.touches.length > 1) { this._nvTouchMulti = true; return; }
+    if (this._nvTouchPending) { this._nvTouchMulti = true; return; }   // second finger down
+    const self = this, sx = t.clientX, sy = t.clientY;
+    this._nvTouchPending = true; this._nvTouchMulti = false;
+    const end = ev => {
+      document.removeEventListener('pointerup', end, true);
+      document.removeEventListener('pointercancel', cancel, true);
+      document.removeEventListener('touchend', end, true);
+      self._nvTouchPending = false;
+      self._nvTouchAt = Date.now();
+      const p = (ev.changedTouches && ev.changedTouches[0]) || ev;
+      if (self._nvTouchMulti || !self._map) return;
+      if (Math.hypot(p.clientX - sx, p.clientY - sy) > TAP_PX) return;   // a pan, not a tap
+      origTouch.call(self, e);
+    };
+    const cancel = () => { self._nvTouchMulti = true; end({ clientX: sx, clientY: sy }); };
+    document.addEventListener('pointerup', end, true);
+    document.addEventListener('pointercancel', cancel, true);
+    document.addEventListener('touchend', end, true);
+  };
+  P._onMouseDown = function (e) { if (recent(this)) return; return origDown.call(this, e); };
+  P._onMouseUp = function (e) {
+    if (recent(this)) { this._clickHandled = null; this._mouseDownOrigin = null; return; }
+    return origUp.call(this, e);
+  };
+  P._finishShape = function (e) {
+    if (e && e.type === 'click' && recent(this)) return;
+    return origFinish.apply(this, arguments);
+  };
+  P.__nvTouchCompat = true;
+})();
+
 /* ===== DRAW EVENTS ===== */
 map.on(L.Draw.Event.CREATED, e => {
   const layer = e.layer, type = e.layerType;

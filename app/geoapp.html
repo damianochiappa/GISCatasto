@@ -357,7 +357,8 @@
             <label class="btn btn-secondary btn-full" style="padding:6px 10px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
               Importa configurazione
-              <input type="file" id="cfg-file-input" accept=".json" style="display:none">
+              <!-- accept="*/*": see #file-input; the handler rejects anything that is not JSON. -->
+              <input type="file" id="cfg-file-input" accept="*/*" style="display:none">
             </label>
             <button class="btn btn-secondary btn-full" id="btn-cfg-restore" style="padding:6px 10px" title="Rimette i layer e le mappe di serie che hai eliminato. Non tocca quello che hai aggiunto tu">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><polyline points="3 3 3 8 8 8"/></svg>
@@ -426,7 +427,8 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Esporta tutto in GeoJSON
             </button>
-            <input type="file" id="import-geojson-input" accept=".json,.geojson" style="display:none">
+            <!-- accept="*/*": see #file-input; a .geojson often has no known MIME type on Android. The handler rejects anything that is not a FeatureCollection. -->
+            <input type="file" id="import-geojson-input" accept="*/*" style="display:none">
             <button class="btn btn-secondary btn-full" id="btn-import-geojson">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/><polyline points="17 8 12 3 7 8"/></svg>
               Importa disegni GeoJSON
@@ -666,7 +668,8 @@
               <div class="guide-item"><span class="guide-key">Carica file</span><span class="guide-desc">Importa KML, KMZ, GeoJSON e GPX, trascinandoli o toccando. Un KML esportato dalla selezione WFS mostra gli attributi catastali nel popup quando lo tocchi. Ricaricare un file già importato lo aggiorna sul posto: mantiene la sua posizione nell’elenco invece di essere aggiunto una seconda volta.</span></div>
               <div class="guide-item"><span class="guide-key">Elenco dei layer</span><span class="guide-desc">Accendi e spegni, regola l’opacità, riordina trascinando la maniglia ⋮ a sinistra della riga, esporta o elimina. Doppio tocco sul nome per rinominarlo. L’ordine dell’elenco è l’ordine di sovrapposizione, senza vincoli: qualsiasi layer può stare sopra o sotto qualsiasi altro, anche un WMS raster sopra un file importato o sopra il catasto. L’ordine che imposti viene ricordato fra un avvio e l’altro. I layer nuovi entrano sotto quelli che coprirebbero — un raster sotto i vettori, una linea sopra le altre linee — e da lì li sposti. I pulsanti che non hanno senso restano nascosti: gli overlay WMS raster non hanno lo zoom all’estensione (non ne hanno una vettoriale) e i layer senza file di origine (WMS/WFS) non hanno l’esportazione.</span></div>
               <div class="guide-item"><span class="guide-key">Vuoto (bucato) ∅</span><span class="guide-desc">Tocca il pulsante ∅ su un layer da file per lasciarne solo il bordo, con il riempimento trasparente. Tocca di nuovo per tornare indietro. Vale per i poligoni di KML, GeoJSON e GPX. Lo stato viene salvato e ripristinato al lancio successivo.</span></div>
-              <div class="guide-item"><span class="guide-key">Modifica KML ✏</span><span class="guide-desc">Tocca la matita su un layer KML per modificarne i vertici: trascinali per spostarli, doppio tocco per eliminarne uno, trascina un punto intermedio tratteggiato per aggiungerne uno nuovo. Salva riporta le modifiche nel layer e aggiorna il KML in memoria. Annulla le scarta tutte.</span></div>
+              <div class="guide-item"><span class="guide-key">Modifica KML ✏</span><span class="guide-desc">Tocca la matita su un layer KML per modificarne i vertici: trascinali per spostarli, doppio tocco per eliminarne uno, trascina un punto intermedio tratteggiato per aggiungerne uno nuovo. Annulla le scarta tutte. Per cambiare nome e descrizione di un elemento, toccalo sulla mappa e usa “Modifica nome e descrizione” nel suo riquadro.</span></div>
+              <div class="guide-item"><span class="guide-key">Dove finiscono le modifiche KML</span><span class="guide-desc"><b>Il file sul telefono non viene mai modificato.</b> Salva aggiorna la copia del KML che l’app tiene in memoria: la ritrovi così anche ai lanci successivi. Per avere il file aggiornato, dopo il salvataggio tocca “Scarica”, oppure in seguito il ⬇ del layer nell’elenco: il KML va nella cartella Download, con lo stesso nome (se esiste già, Android aggiunge un numero). Nel file scaricato cambiano solo coordinate, nome e descrizione degli elementi che hai toccato: cartelle, stili, icone, quote e orari restano quelli originali, e le misure degli elementi modificati vengono ricalcolate. Da un KMZ si scarica un KML: le immagini contenute nel KMZ non vengono incluse.</span></div>
               <div class="guide-item"><span class="guide-key">Configurazione mappe</span><span class="guide-desc">“Esporta configurazione” scrive un JSON con i servizi web che hai aggiunto — WMS, WFS, WMTS/XYZ, ArcGIS — conservando nome del layer, CRS, filtro, colore, opacità, visibilità e ordine di sovrapposizione, più le eventuali eccezioni SSL. L’importazione li ripristina su un altro dispositivo o dopo una reinstallazione. <b>Cosa non contiene:</b> i file che hai importato (KML, KMZ, GeoJSON, GPX), i tuoi disegni, i segnalibri e i tile in cache. Quelli stanno da un’altra parte sul dispositivo e viaggiano come file: esporta un layer da file dal suo elenco, e i disegni da Disegno &rarr; “Esporta tutto”. Nemmeno le basemap offline scaricate: i tile non viaggiano, e la mappa da cui le hai scaricate è già nel JSON — riscarichi l’area da quella. “Ripristina i predefiniti eliminati” rimette i layer e le mappe di serie che hai eliminato — utile se hai tolto per sbaglio un layer catastale, perché la ricerca per foglio e particella ha bisogno del layer Catasto Particelle per funzionare. Non tocca quello che hai aggiunto tu, e i predefiniti che hai ancora restano com’erano: colore, opacità, filtro e posizione nell’elenco.</span></div>
             </div>
 
@@ -1015,7 +1018,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.4.6</span></div>
+      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.4.7</span></div>
       <div class="about-row"><span class="lbl">Autore</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">Licenza</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — software libero</a></span></div>
       <div class="about-row"><span class="lbl">Tecnologia</span><span class="val">Leaflet · Cordova · Android</span></div>

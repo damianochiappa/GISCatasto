@@ -1,3 +1,7 @@
+/*
+ * leaflet-rotate — https://github.com/Raruto/leaflet-rotate — GPL-3.0
+ * Modified 2026-10 for GISCatasto: L.Marker._initInteraction (marked "GISCatasto patch").
+ */
 (function (factory) {
     typeof define === 'function' && define.amd ? define(factory) :
     factory();
@@ -452,16 +456,23 @@
 
         _initInteraction: function() {
             var ret = markerProto._initInteraction.apply(this, arguments);
-            if (this.dragging && this.dragging.enabled() && this._map && this._map._rotate) {
+            /* GISCatasto patch: install the rotation-aware drag handlers whether or not dragging
+               is enabled yet. Upstream only did it for markers created with draggable: true, so
+               a marker made draggable later (Leaflet.draw's edit mode calls dragging.enable())
+               kept Leaflet's stock _onDrag, which reads the icon's map-pane position as a
+               layer point: the icon stayed under the finger but the latlng was off by the
+               rotate pane's offset, and the next zoom redrew the marker there. */
+            if (this.dragging && this._map && this._map._rotate) {
                 // L.Handler.MarkerDrag is used internally by L.Marker to make the markers draggable
                 markerDragProto = markerDragProto || Object.getPrototypeOf(this.dragging);
-                this.dragging.disable();
+                var wasEnabled = this.dragging.enabled();
+                if (wasEnabled) this.dragging.disable();
                 Object.assign(this.dragging, {
                     // _onDragStart: MarkerDrag._onDragStart.bind(this.dragging),
                     _onDrag: MarkerDrag._onDrag.bind(this.dragging),
                     _onDragEnd: MarkerDrag._onDragEnd.bind(this.dragging),
                 });
-                this.dragging.enable();
+                if (wasEnabled) this.dragging.enable();
             }
             return ret;
         },

@@ -425,6 +425,45 @@ function showPromptModal(message, defaultValue, onConfirm, hint) {
   setTimeout(() => { inp.focus(); inp.select(); }, 80);
 }
 
+/* Name + description of a KML placemark. The description is a multi-line field and keeps
+   whatever markup it holds: it is shown and written back as source, never re-formatted. */
+function showKmlTextModal(name, desc, onConfirm) {
+  let modal = document.getElementById('kml-text-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'kml-text-modal';
+    modal.className = 'modal-backdrop';
+    modal.innerHTML =
+      '<div class="modal-box">' +
+        '<p style="margin-bottom:12px;font-size:13px;line-height:1.5">Nome e descrizione</p>' +
+        '<div class="field"><label for="kml-text-name">Nome</label>' +
+          '<input type="text" id="kml-text-name" autocomplete="off"></div>' +
+        '<div class="field" style="margin-top:8px"><label for="kml-text-desc">Descrizione</label>' +
+          '<textarea id="kml-text-desc" rows="5" style="resize:vertical;min-height:96px"></textarea></div>' +
+        '<p class="hint" style="margin:4px 0 10px">Le misure si ricalcolano da sole. Il file sul telefono non cambia: dopo il salvataggio puoi scaricare il KML aggiornato.</p>' +
+        '<div class="modal-btns">' +
+          '<button class="btn btn-secondary" id="kml-text-cancel">Annulla</button>' +
+          '<button class="btn btn-primary" id="kml-text-ok">Salva</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(modal);
+    const _close = () => { modal.style.display = 'none'; };
+    document.getElementById('kml-text-cancel').addEventListener('click', _close);
+    document.getElementById('kml-text-ok').addEventListener('click', () => {
+      _close();
+      if (modal._cb) modal._cb(document.getElementById('kml-text-name').value,
+                               document.getElementById('kml-text-desc').value);
+    });
+    modal.addEventListener('click', e => { if (e.target === modal) _close(); });
+    modal.addEventListener('keydown', e => { if (e.key === 'Escape') _close(); });
+  }
+  document.getElementById('kml-text-name').value = name || '';
+  document.getElementById('kml-text-desc').value = desc || '';
+  modal._cb = onConfirm;
+  modal.style.display = 'flex';
+  setTimeout(() => document.getElementById('kml-text-name').focus(), 80);
+}
+
 /* Confirmation modal with an optional "don't show this again" tick.
    The native confirm() cannot carry that tick, and the tick is the point: this dialog
    guards a click people make deliberately, so asking forever would only train them to
