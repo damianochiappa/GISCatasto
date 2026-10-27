@@ -2240,10 +2240,22 @@ function _selModeOff() {
   _hideTargetPicker();
   _updateWfsPaneZOrder();
   const btn = document.getElementById('sel-mode-btn');
-  if (btn) { btn.classList.remove('active'); btn.textContent = '\u25CE Seleziona'; }
+  if (btn) { btn.classList.remove('active'); _selSetModeLabel(btn, 'Seleziona'); }
   const badge = document.getElementById('sel-badge');
   if (badge) badge.classList.remove('mode-active');
 }
+
+/* The badge's words sit in a .sel-lbl span so that a narrow phone can drop them while there is a
+   selection (app.css, #sel-badge.has-sel): with all of them the badge is 340 px wide and, centred
+   on a 360 px screen, its close button lands under the GPS button. Icon and number stay. */
+function _selSetLabelled(el, head, words) {
+  const lbl = document.createElement('span');
+  lbl.className = 'sel-lbl';
+  lbl.textContent = ' ' + words;
+  el.textContent = head;
+  el.appendChild(lbl);
+}
+function _selSetModeLabel(btn, words) { _selSetLabelled(btn, '\u25CE', words); }
 
 function _selModeToggle() {
   if (_selMode) { _selModeOff(); return; }
@@ -2252,7 +2264,7 @@ function _selModeToggle() {
     _selMode = true; _selTarget = _wfsRegistry[0].typeName;
     _updateWfsPaneZOrder();
     const btn = document.getElementById('sel-mode-btn');
-    if (btn) { btn.classList.add('active'); btn.textContent = '\u25CE ' + _wfsRegistry[0].name; }
+    if (btn) { btn.classList.add('active'); _selSetModeLabel(btn, _wfsRegistry[0].name); }
     const badge = document.getElementById('sel-badge');
     if (badge) badge.classList.add('mode-active');
   } else {
@@ -2282,7 +2294,7 @@ function _showTargetPicker() {
       _hideTargetPicker();
       _updateWfsPaneZOrder();
       const modeBtn = document.getElementById('sel-mode-btn');
-      if (modeBtn) { modeBtn.classList.add('active'); modeBtn.textContent = '\u25CE ' + label; }
+      if (modeBtn) { modeBtn.classList.add('active'); _selSetModeLabel(modeBtn, label); }
       const _badge = document.getElementById('sel-badge');
       if (_badge) _badge.classList.add('mode-active');
       toastMsg('Selezione attiva: ' + label, 'success');
@@ -2376,7 +2388,8 @@ function _selUpdateBadge() {
   const countEl  = document.getElementById('sel-badge-count');
   const exportEl = document.getElementById('sel-badge-export');
   const closeEl  = document.getElementById('sel-badge-close');
-  if (countEl)  { countEl.textContent = _selKeys.size + ' selected'; countEl.style.display  = hasSel ? '' : 'none'; }
+  if (countEl)  { _selSetLabelled(countEl, String(_selKeys.size), _selKeys.size === 1 ? 'selezionata' : 'selezionate'); countEl.style.display  = hasSel ? '' : 'none'; }
+  badge.classList.toggle('has-sel', hasSel);
   if (exportEl) { exportEl.style.display = hasSel ? '' : 'none'; exportEl.classList.toggle('lit', hasSel); }
   if (closeEl)  closeEl.style.display  = hasSel ? '' : 'none';
 }
@@ -2519,6 +2532,16 @@ function _splitOgcUrl(url) {
      twice this one. The ceiling was the reason to be careful here — a WFS box is features, not
      pixels like a WMS one — so it was measured rather than assumed. */
 const _NV_WFS_PAD = 0.1;
+
+/* The Agenzia Entrate WFS refuses about one GetFeature URL in thirteen (3 of 40 measured on
+   26/10) with <ServiceException code="InvalidFormat"> and HTTP 200. The refusal follows the URL
+   STRING, not the area: the same URL is refused every time, while the same box with one extra
+   parameter, or "7.6600" written for "7.66", is answered. Every pan sends one request per
+   cadastral layer, so about one pan in seven ended in an error toast for a view the server
+   serves perfectly well. Asked again with a harmless extra parameter instead; two retries take
+   the expected failure rate from 1/13 to under 1/2000, assuming the refusals are independent.
+   Only that code is retried — any other exception is a real answer and is reported as before. */
+const _WFS_REFUSAL_RETRIES = 2;
 
 /* Zoom below which the Agenzia Entrate cadastre publishes no parcels at all. Read off the
    MaxScaleDenominator of 5000 it declares for CP:CadastralParcel, and confirmed twice against
@@ -3472,6 +3495,7 @@ const _WFSLayer = L.Layer.extend({
     const url = this._wfsUrl + '?' +
       (this._wfsPre ? this._wfsPre + '&' : '') +
       Object.entries(p).map(([k,v]) => k + '=' + encodeURIComponent(v)).join('&');
+    let _try = 0;   // refused replies asked again so far, for this view
 
     const _render = geojson => {
       /* A superseded response still ends this layer's turn in the queue. onRemove bumps _reqId
@@ -3925,10 +3949,20 @@ const _WFSLayer = L.Layer.extend({
       try {
         const _d = new DOMParser().parseFromString(text, 'application/xml');
         const _root = _d.documentElement;
-        const _exc = _d.querySelector('ExceptionText,exceptionText');
+        /* ServiceException is the WMS-style 1.1.1 report MapServer sends (Agenzia Entrate); without
+           it the toast named only the root element, "<ServiceExceptionReport>", and not the reason. */
+        const _exc = _d.querySelector('ExceptionText,exceptionText,ServiceException');
+        const _code = _exc ? (_exc.getAttribute('code') || '') : '';
+        if (_code === 'InvalidFormat' && _try < _WFS_REFUSAL_RETRIES) {
+          // Out before _done: the new request has to be in flight before the cycle can close.
+          _try++;
+          _send();
+          _done();
+          return;
+        }
         const _hint = (this.options.filterAttr && this.options.filterVals)
           ? ' — filtro attivo: verifica il nome dell’attributo e la versione WFS' : '';
-        _errOnce(this._name() + ': il server ha risposto <' + _root.localName + '>' + (_exc ? ': ' + _exc.textContent.substring(0,60) : '') + _hint);
+        _errOnce(this._name() + ': il server ha risposto <' + _root.localName + '>' + (_exc ? ': ' + _exc.textContent.trim().substring(0,60) : '') + _hint);
       } catch(_) { _errOnce(this._name() + ': risposta non valida'); }
     };
 
@@ -3943,6 +3977,9 @@ const _WFSLayer = L.Layer.extend({
     try { if (this._abort) this._abort.abort(); } catch(_) {}
     this._abort = (typeof AbortController === 'function') ? new AbortController() : null;
     const _signal = this._abort ? this._abort.signal : undefined;
+    /* A retry differs from the original only by a parameter the server ignores, because the
+       Agenzia's refusal follows the URL string and not the area: see _WFS_REFUSAL_RETRIES. */
+    const _send = () => this._sendRequest(_try ? url + '&_r=' + _try : url, reqId, _parse, _errOnce, _signal);
     /* The request goes out now, in parallel with every other layer's; only the REPLY waits its
        turn to be read. A transport failure never enters the queue — there is nothing to parse —
        so it is reported straight away and holds nobody up. */
@@ -3950,6 +3987,12 @@ const _WFSLayer = L.Layer.extend({
        moment the user's wait starts. _wfsInFlight is what tells the cycle it is not over yet while
        replies are still on their way. */
     _wfsCycleBegin();
+    _send();
+  },
+
+  /* One GetFeature on the wire. Split out of _update so a refused reply can be asked again
+     (see _WFS_REFUSAL_RETRIES); every call is one more request in flight for the cycle. */
+  _sendRequest(url, reqId, _parse, _errOnce, _signal) {
     _wfsInFlight++;
     let landed = false;
     const _arrived = () => { if (landed) return; landed = true; _wfsArrivedThisCycle++; _wfsInFlight = Math.max(0, _wfsInFlight - 1); };
@@ -3978,7 +4021,7 @@ const _WFSLayer = L.Layer.extend({
             try {
               const _exc = new DOMParser()
                 .parseFromString(String((err && err.error) || ''), 'application/xml')
-                .querySelector('ExceptionText,exceptionText');
+                .querySelector('ExceptionText,exceptionText,ServiceException');
               if (_exc) detail += ': ' + _exc.textContent.trim().substring(0, 60);
             } catch(_) {}
             _errOnce(this._name() + ': ' + detail);

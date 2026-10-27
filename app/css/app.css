@@ -598,7 +598,6 @@ html, body {
 #toast {
   position: fixed;
   bottom: var(--lane-bottom);
-  transition: bottom .25s cubic-bezier(.4,0,.2,1);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -607,7 +606,12 @@ html, body {
   align-items: center;
   z-index: 9999;
   pointer-events: none;
+  /* `left` only. `bottom` is NOT animated: when a badge or the nav HUD lifts the lane, the toast
+     has to clear it at once, not glide across it for a quarter of a second (test-navfollow). */
   transition: left .3s cubic-bezier(.4,0,.2,1);
+  /* Room for one control column (40 px + 10 px margin) on each side plus a small gap: the
+     bottom-right buttons start on the same baseline as the toast lane. Read by .toast-item. */
+  --toast-max-w: calc(100vw - 112px - var(--sal) - var(--sar));
 }
 .toast-item {
   background: var(--surface3);
@@ -621,7 +625,15 @@ html, body {
   transform: translateY(18px);
   transition: opacity .28s cubic-bezier(.4,0,.2,1), transform .28s cubic-bezier(.4,0,.2,1);
   box-shadow: 0 4px 20px rgba(0,0,0,.5);
-  white-space: nowrap;
+  /* Wraps instead of nowrap. A single line had no width limit, so on a 360 px phone a layer
+     error (60-100 characters, 450-600 px) ran off BOTH edges and was cut on each side. The
+     explicit max-content width matters: #toast sits at left:50%, so its shrink-to-fit width
+     would otherwise be half the screen and every message would wrap at 180 px. */
+  white-space: normal;
+  width: max-content;
+  max-width: var(--toast-max-w, calc(100vw - 112px));
+  text-align: center;
+  overflow-wrap: anywhere;
   /* Opaque, and no backdrop-filter. Every floating panel over the map gets the same
      treatment so they stay consistent with each other. Two reasons, both from the
      device on 31/08: under stress this panel rendered EMPTY — the chrome painted, the
@@ -672,6 +684,8 @@ html, body {
   #app.menu-open #kml-edit-bar {
     left: calc(50% + var(--sidebar-w) / 2);
   }
+  /* Centred on the map area, so limited by it too, or a long message would reach the sidebar. */
+  #app.menu-open ~ #toast { --toast-max-w: calc(100vw - var(--sidebar-w) - 112px - var(--sal) - var(--sar)); }
 }
 
 /* Sidebar-local toast stack: anchored to the sidebar bottom so messages produced by sidebar
@@ -696,7 +710,14 @@ html, body {
    base lane on engines without :has() — no worse than a shared slot. */
 body:has(#sel-badge:not(.hidden)) #toast,
 body:has(#nav-follow-badge:not(.hidden)) #toast { bottom: calc(var(--lane-bottom) + var(--badge-lane)); }
-body:has(#kml-edit-bar:not(.hidden)) #toast     { bottom: calc(var(--lane-bottom) + var(--badge-lane) * 2); }
+/* The edit bar is taller than a badge once its hint wraps (two or three lines on a phone), so
+   it clears more than two lanes: 28 px covers the extra lines at 10 px type. */
+body:has(#kml-edit-bar:not(.hidden)) #toast     { bottom: calc(var(--lane-bottom) + var(--badge-lane) * 2 + 28px); }
+@media (max-width: 400px) {
+  /* Plus the label's own line (see #kml-edit-label). Measured on the bench at 320-393 px: the bar
+     is 98 px tall there, and +48 left the toast 2 px inside it; +56 is those 2 px and a 6 px gap. */
+  body:has(#kml-edit-bar:not(.hidden)) #toast   { bottom: calc(var(--lane-bottom) + var(--badge-lane) * 2 + 56px); }
+}
 /* The nav HUD and the flight panel are not centre badges — they are taller and they sit in
    the same bottom lane on the left — but a toast lands on them all the same: the pill is
    z-index 9999 over their 800 and, with white-space:nowrap on a phone, wide enough to reach
@@ -964,6 +985,10 @@ body:has(#flight-panel:not(.hidden)) #toast     { bottom: calc(var(--lane-bottom
    opposite corner. The left corner therefore clears a second band, not one. */
 .leaflet-control-container .leaflet-bottom.leaflet-left {
   bottom: calc(var(--status-h) + var(--sab) + var(--copyright-band) * 2);
+  /* Under every floating panel over the map (800-812): Leaflet's 1000 put the scale
+     bar over the Select badge where the two meet. The scale is read-only, so nothing is lost by
+     letting a panel cover it. It is the only control in this corner. */
+  z-index: 790;
 }
 
 /* ⛔ #compass-svg used to carry `will-change: transform`, added 19/07 (e262c85) so the needle's
@@ -1305,6 +1330,16 @@ a.polyline-measure-controlOnBgColor:hover {
      .modal-backdrop keeps its blur: it is a scrim meant to dim the map, not a panel. */
 }
 #sel-badge.hidden { display: none; }
+/* Phones, with a selection: icon and number only. With every word the badge is 340 px wide
+   (more with a layer name in the mode button) and needs a screen of 460 px or more to clear the
+   button columns; centred on a 360 px screen its close button sat under the GPS button, and at
+   423 px it still did. 520 px leaves room for the layer name and takes in every phone held
+   upright. The words are .sel-lbl spans (map.js, _selSetLabelled); the titles say what each
+   button does. */
+@media (max-width: 520px) {
+  #sel-badge.has-sel .sel-lbl { display: none; }
+  #sel-badge.has-sel #sel-mode-btn { min-width: 36px; }   /* the icon alone is ~34 px: same target as ✕ */
+}
 #sel-badge.mode-active {
   animation: badge-mode-glow 2.5s ease-in-out infinite;
 }
@@ -1353,7 +1388,10 @@ a.polyline-measure-controlOnBgColor:hover {
 
 #wfs-target-picker {
   position: absolute;
-  bottom: 108px;
+  /* Was a fixed 108px, which lands INSIDE the Select badge it is opened from (the badge spans
+     --lane-bottom = 88px + the gesture inset, plus 46px), and lower still on edge-to-edge
+     Android where the inset grows. One lane above the badge, like the KML edit bar. */
+  bottom: calc(var(--lane-bottom) + var(--badge-lane));
   left: 50%; transform: translateX(-50%);
   z-index: 812;
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: center;
@@ -1400,9 +1438,18 @@ a.polyline-measure-controlOnBgColor:hover {
   /* Opaque, no backdrop-filter — same treatment as every other floating panel. */
 }
 #kml-edit-bar.hidden { display: none; }
-#kml-edit-main { display: flex; align-items: center; gap: 8px; }
+#kml-edit-main { display: flex; align-items: center; justify-content: center; gap: 8px; }
 #kml-edit-label { color: #4f8ef7; font-size: 13px; font-weight: 600; }
-#kml-edit-hint { font-size: 10px; color: var(--text-muted); letter-spacing: .2px; }
+/* The hint is about 100 characters, ~520 px on one line: under the bar's nowrap it ran off both
+   edges of any phone. It wraps inside the bar now, and the bar stays inside the screen. */
+#kml-edit-bar { max-width: calc(100vw - 24px - var(--sal) - var(--sar)); }
+#kml-edit-hint { font-size: 10px; color: var(--text-muted); letter-spacing: .2px; white-space: normal; text-align: center; }
+/* Narrow phones: label, buttons and hint no longer fit one row (~340 px), so the label takes
+   its own line above the buttons instead of pushing Annulla off the bar. */
+@media (max-width: 400px) {
+  #kml-edit-main { flex-wrap: wrap; row-gap: 2px; }
+  #kml-edit-label { flex-basis: 100%; text-align: center; }
+}
 /* Same line, second job: why editing is unavailable when the viewport holds more vertices than
    the editor will materialise. A state, so it stays put instead of passing like a toast. */
 #kml-edit-hint.nv-vx-blocked { color: var(--warn); font-weight: 600; }

@@ -305,6 +305,15 @@
            doc.getElementsByTagName('parsererror').length > 0;
   }
 
+  const REFUSAL_RETRIES = 2;
+
+  function isInvalidFormat(doc) {
+    const root = doc && doc.documentElement;
+    if (!root || root.localName !== 'ServiceExceptionReport') return false;
+    const exc = root.getElementsByTagName('ServiceException')[0];
+    return !!exc && exc.getAttribute('code') === 'InvalidFormat';
+  }
+
   function tileUrl(typeName, tile) {
     const [s, w, n, e] = tile;
     const bboxParam =
@@ -321,7 +330,13 @@
   // Resolves to { feats, holes }. Transport errors reject, as before; only refusals are split.
   // The pieces are fetched one after another, so a split never raises the caller's concurrency.
   async function fetchTileFeatures(typeName, tagName, tile, depth) {
-    const doc = await fetchXml(tileUrl(typeName, tile));
+    let doc = await fetchXml(tileUrl(typeName, tile));
+    // The InvalidFormat refusal follows the URL string, not the area (see _WFS_REFUSAL_RETRIES in
+    // map.js), so the same tile asked with one extra parameter is normally answered. Cheaper than a
+    // split, which costs four requests; the split stays as the fallback for anything else.
+    for (let t = 1; t <= REFUSAL_RETRIES && isInvalidFormat(doc); t++) {
+      doc = await fetchXml(tileUrl(typeName, tile) + '&_r=' + t);
+    }
     if (!isRefusal(doc)) {
       return { feats: Array.from(doc.getElementsByTagNameNS('*', tagName)), holes: 0 };
     }
