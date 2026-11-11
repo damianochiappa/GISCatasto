@@ -1603,3 +1603,97 @@ function _attachAddressSearch(input, onPick, opts) {
     if (!input.contains(e.target) && !_dropdown.contains(e.target)) _close();
   });
 }
+
+/* ===== DRAGGABLE FLOATING PANELS =====
+   One implementation for every panel that can be moved (Strumenti, Naviga, Volo, Navigazione).
+   There used to be four copies, and they had drifted apart by accident: two ignored a button
+   in the header only on touch, one never did, so a press on the flight panel's "−" started a
+   drag and called preventDefault on the touch that should have become its click.
+   - Pointer Events with pointer capture: one path for finger, mouse and pen, and the moves keep
+     arriving even when the finger runs ahead of the header.
+   - touch-action:none belongs on the handle only (app.css), so the body of a panel still
+     scrolls with a finger.
+   - A drag starts only after _DRAG_SLOP_PX of travel, so a tap on the header stays a tap; a
+     press on a control in the header (button, input, select, link) never starts one.
+   - The panel is kept inside the window and between the two bars while dragging AND after the
+     window changes size (rotation, keyboard), which the old copies did not do.
+   - A double tap on the handle puts the panel back where the stylesheet places it. While the
+     panel sits there it reserves its lane (the .panel-moved class is what the lane rules in
+     app.css read), so the floaters in the centre make room for it again.
+   - The panel tapped or dragged comes to the front (window._panelZTop, shared with the rest
+     of the app), as before. No visual effect of its own while dragged: the panel following the
+     finger is the feedback, and the app keeps its plain look. */
+const _DRAG_SLOP_PX   = 6;
+const _DRAG_DBLTAP_MS = 350;
+const _draggablePanels = [];
+
+/* Sideways the limit is the window; up and down it is the two bars, not the window. Both bars
+   lie over the map and over the panels (z-index 1000 against 800): a panel taken to the very
+   top had its handle under the top bar, where no finger reaches it — no drag back, no double
+   tap, only a restart. The upper limit is applied last, so on a screen too short for the panel
+   it is the handle that stays in reach. */
+function _panelClamp(panel, left, top) {
+  const mw = window.innerWidth, mh = window.innerHeight;
+  const tb = document.getElementById('topbar'), sb = document.getElementById('statusbar');
+  const minTop = tb ? Math.max(0, tb.getBoundingClientRect().bottom) : 0;
+  const maxBottom = sb ? Math.min(mh, sb.getBoundingClientRect().top) : mh;
+  panel.style.left = Math.max(0, Math.min(mw - panel.offsetWidth,  left)) + 'px';
+  panel.style.top  = Math.max(minTop, Math.min(maxBottom - panel.offsetHeight, top)) + 'px';
+}
+
+/* Back to the stylesheet's position: the inline coordinates go, the z-index stays. */
+function resetPanelPosition(panel) {
+  if (!panel) return;
+  panel.style.left = panel.style.top = panel.style.right = panel.style.bottom = '';
+  panel.classList.remove('panel-moved');
+}
+
+function makePanelDraggable(panel, handle) {
+  if (!panel || !handle || panel._dragWired) return;
+  panel._dragWired = true;
+  _draggablePanels.push(panel);
+  let pid = null, sx = 0, sy = 0, ox = 0, oy = 0, moved = false, lastTap = 0;
+
+  handle.addEventListener('pointerdown', e => {
+    if (pid !== null) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.target.closest && e.target.closest('button, input, select, textarea, a')) return;
+    pid = e.pointerId; sx = e.clientX; sy = e.clientY; moved = false;
+    panel.style.zIndex = ++window._panelZTop;
+    try { handle.setPointerCapture(pid); } catch (_) {}
+  });
+  handle.addEventListener('pointermove', e => {
+    if (e.pointerId !== pid) return;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (!moved) {
+      if (Math.abs(dx) < _DRAG_SLOP_PX && Math.abs(dy) < _DRAG_SLOP_PX) return;
+      moved = true;
+      // Switch from the stylesheet's anchoring to left/top at the panel's current place.
+      const r = panel.getBoundingClientRect();
+      panel.style.bottom = 'auto'; panel.style.right = 'auto';
+      panel.style.left = r.left + 'px'; panel.style.top = r.top + 'px';
+      ox = r.left; oy = r.top;
+      panel.classList.add('panel-moved');
+    }
+    _panelClamp(panel, ox + dx, oy + dy);
+    e.preventDefault();
+  });
+  const end = e => {
+    if (e.pointerId !== pid) return;
+    pid = null;
+    if (moved || e.type === 'pointercancel') { lastTap = 0; return; }
+    const now = Date.now();
+    if (now - lastTap < _DRAG_DBLTAP_MS) { lastTap = 0; resetPanelPosition(panel); }
+    else lastTap = now;
+  };
+  handle.addEventListener('pointerup', end);
+  handle.addEventListener('pointercancel', end);
+}
+
+/* A moved panel must stay reachable after the window shrinks (rotation, keyboard). */
+window.addEventListener('resize', () => {
+  _draggablePanels.forEach(p => {
+    if (!p.classList.contains('panel-moved') || !p.offsetWidth) return;
+    _panelClamp(p, parseFloat(p.style.left) || 0, parseFloat(p.style.top) || 0);
+  });
+});

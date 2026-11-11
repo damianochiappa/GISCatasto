@@ -38,12 +38,27 @@
      the nav HUD measures 101 px on the bench at 412×915 and the flight panel is within a
      few pixels of it, so 112 px clears either one with a small gap left over. */
   --hud-lane: 112px;
+  /* The centre column is one stack, bottom to top: Select badge, Recentre badge, then the KML
+     edit bar / layer picker, then the toast. Each step is 0 until its element is on screen
+     (the body:has() rules under TOAST switch them on), so every floater sits exactly one
+     badge lane above whatever is visible beneath it, and nothing shares a slot.
+     While the nav HUD or the flight panel is on screen in its stylesheet place (not dragged
+     away: .panel-moved), the column makes room for it, first sideways, then upwards:
+     --centre-shift moves the badges right where there is room before the bottom-right buttons
+     (landscape), --badge-lift raises them above the panel where there is not (portrait phones).
+     map.js measures which one from the laid-out boxes (flight panel block). --left-lift is the
+     panel's lane for the toast, which is wider than any badge and always rises above it. */
+  --left-lift: 0px;
+  --badge-lift: 0px;
+  --centre-shift: 0px;
+  --sel-step: 0px;
+  --follow-step: 0px;
   /* System bar insets, routed through variables instead of env() at each use site.
      The meta viewport carries viewport-fit=cover, so env() reports the bars on every
-     Android — but below Android 15 the window is NOT edge-to-edge: the system has
-     already shrunk the WebView to sit between the bars. Padding for them again
-     reserved the same ~100 CSS px twice and produced the dark bands. The class below,
-     set in geoapp.html before first paint, zeroes them where that is the case. */
+     Android — also where the window already sits between them (the app shell on every
+     Android version, a browser below Android 15). Padding for them again reserved the
+     same space twice and produced the dark bands. The class below, set in geoapp.html
+     before first paint, zeroes them where that is the case. */
   --sat: env(safe-area-inset-top, 0px);
   --sar: env(safe-area-inset-right, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
@@ -679,10 +694,12 @@ html, body {
    on the visible map area — not on the whole viewport — so they don't drift toward the sidebar.
    Mobile portrait uses an overlay sidebar that hides the map, so no shift is applied there. */
 @media (min-width: 641px) {
-  #app.menu-open ~ #toast,
+  #app.menu-open ~ #toast {
+    left: calc(50% + var(--sidebar-w) / 2);
+  }
   #app.menu-open #sel-badge,
   #app.menu-open #kml-edit-bar {
-    left: calc(50% + var(--sidebar-w) / 2);
+    left: calc(50% + var(--sidebar-w) / 2 + var(--centre-shift));
   }
   /* Centred on the map area, so limited by it too, or a long message would reach the sidebar. */
   #app.menu-open ~ #toast { --toast-max-w: calc(100vw - var(--sidebar-w) - 112px - var(--sal) - var(--sar)); }
@@ -705,30 +722,32 @@ html, body {
 }
 #sidebar.collapsed #toast-sidebar { display: none; }
 #toast-sidebar .toast-item { white-space: normal; text-align: center; max-width: 100%; }
-/* Dynamic toast lane: lift it clear of whichever centre badge is showing so the
-   transient message never lands on top of a persistent control. Falls back to the
-   base lane on engines without :has() — no worse than a shared slot. */
-body:has(#sel-badge:not(.hidden)) #toast,
-body:has(#nav-follow-badge:not(.hidden)) #toast { bottom: calc(var(--lane-bottom) + var(--badge-lane)); }
+/* The stack steps (see --left-lift in :root). Falls back to the base lane on engines without
+   :has() — no worse than a shared slot. */
+body:has(#sel-badge:not(.hidden))        { --sel-step: var(--badge-lane); }
+body:has(#nav-follow-badge:not(.hidden)) { --follow-step: var(--badge-lane); }
+/* The nav HUD and the flight panel sit in the bottom lane on the left. Measured on the bench at
+   412×915 before this rule: HUD x 10-242 y 639-740, toast x 92-408 y 657-692 — the message sat
+   inside the panel, over the distance and ETA readings; at 369×735 the Recentre badge sat on it
+   as well. --hud-lane is the panel's measured height plus a gap (map.js, flight panel block). */
+body:has(#nav-hud:not(.hidden):not(.panel-moved)),
+body:has(#flight-panel:not(.hidden):not(.panel-moved)) { --left-lift: var(--hud-lane); }
+/* Dynamic toast lane: on top of the stack, so the transient message never lands on a
+   persistent control. */
+/* ...and never under the top bar: on a rotated phone the stack can be taller than the screen
+   (flight panel 183 px on 369), and a message half behind the bar is worse than one that
+   touches a floater. 64 px is a two-line toast. */
+#toast { --toast-ceil: calc(100vh - var(--topbar-h) - var(--sat) - 64px);
+         bottom: min(var(--toast-ceil), calc(var(--lane-bottom) + max(var(--left-lift), var(--badge-lift) + var(--sel-step) + var(--follow-step)))); }
 /* The edit bar is taller than a badge once its hint wraps (two or three lines on a phone), so
    it clears more than two lanes: 28 px covers the extra lines at 10 px type. */
-body:has(#kml-edit-bar:not(.hidden)) #toast     { bottom: calc(var(--lane-bottom) + var(--badge-lane) * 2 + 28px); }
-@media (max-width: 400px) {
-  /* Plus the label's own line (see #kml-edit-label). Measured on the bench at 320-393 px: the bar
-     is 98 px tall there, and +48 left the toast 2 px inside it; +56 is those 2 px and a 6 px gap. */
-  body:has(#kml-edit-bar:not(.hidden)) #toast   { bottom: calc(var(--lane-bottom) + var(--badge-lane) * 2 + 56px); }
+body:has(#kml-edit-bar:not(.hidden)) #toast     { bottom: min(var(--toast-ceil), calc(var(--lane-bottom) + max(var(--left-lift), var(--badge-lift) + var(--follow-step) + var(--badge-lane) * 2 + 28px))); }
+@media (max-width: 460px) {
+  /* Plus the label's own line (see #kml-edit-label; same 460 px as that rule). Measured on the
+     bench at 320-393 px: the bar is 98 px tall there, and +48 left the toast 2 px inside it;
+     +56 is those 2 px and a 6 px gap. */
+  body:has(#kml-edit-bar:not(.hidden)) #toast   { bottom: min(var(--toast-ceil), calc(var(--lane-bottom) + max(var(--left-lift), var(--badge-lift) + var(--follow-step) + var(--badge-lane) * 2 + 56px))); }
 }
-/* The nav HUD and the flight panel are not centre badges — they are taller and they sit in
-   the same bottom lane on the left — but a toast lands on them all the same: the pill is
-   z-index 9999 over their 800 and, with white-space:nowrap on a phone, wide enough to reach
-   across. Measured on the bench at 412×915: HUD x 10-242 y 639-740, toast x 92-408 y 657-692
-   — the message sat inside the panel, over the distance and ETA readings. A warn or error
-   toast is a translucent coloured pill with a blur and a two-shot glow animation, so read
-   off the panel underneath it is the panel changing colour and turning to frosted glass.
-   Last of the lane rules on purpose: both panels are taller than any badge, so when one is
-   up its clearance is the one that has to win. */
-body:has(#nav-hud:not(.hidden)) #toast,
-body:has(#flight-panel:not(.hidden)) #toast     { bottom: calc(var(--lane-bottom) + var(--hud-lane)); }
 
 /* Boost popup/tooltip pane z-index — leaflet-rotate per-pane transforms create stacking
    contexts that ignore z-index between siblings; DOM order + high z-index as double safety */
@@ -1229,7 +1248,9 @@ a.polyline-measure-controlOnBgColor:hover {
   right: 46px;
   z-index: 800;
   width: 276px;
-  max-height: 70vh;
+  /* Never taller than the room between the top bar and its own lane: on a rotated phone 70vh
+     of nothing was still more than that, and the panel ran under the top bar. */
+  max-height: min(70vh, calc(100vh - var(--topbar-h) - var(--sat) - var(--lane-bottom) - var(--badge-lane) - 6px));
   background: var(--surface);
   border: 1px solid var(--border);
   border-top-color: rgba(255,255,255,.07);
@@ -1287,6 +1308,9 @@ a.polyline-measure-controlOnBgColor:hover {
   bottom: calc(var(--lane-bottom) + var(--badge-lane)); right: 46px;
   z-index: 800;
   width: 264px;
+  /* Same limit as #map-tools; the body below scrolls when the limit bites (it is 242 px tall
+     on a 369 px rotated phone, with 201 px of room). */
+  max-height: calc(100vh - var(--topbar-h) - var(--sat) - var(--lane-bottom) - var(--badge-lane) - 6px);
   background: var(--surface);
   border: 1px solid var(--border);
   border-top-color: rgba(255,255,255,.07);
@@ -1305,11 +1329,12 @@ a.polyline-measure-controlOnBgColor:hover {
      .modal-backdrop keeps its blur: it is a scrim meant to dim the map, not a panel. */
 }
 #nav-panel.hidden { display: none; }
+#nav-panel > div:not(.mt-header) { overflow-y: auto; min-height: 0; overscroll-behavior: contain; }
 
 #sel-badge {
   position: absolute;
-  bottom: var(--lane-bottom);
-  left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--lane-bottom) + var(--badge-lift));
+  left: calc(50% + var(--centre-shift)); transform: translateX(-50%);
   transition: left .3s cubic-bezier(.4,0,.2,1);
   z-index: 810;
   display: flex; align-items: center; gap: 8px;
@@ -1391,8 +1416,8 @@ a.polyline-measure-controlOnBgColor:hover {
   /* Was a fixed 108px, which lands INSIDE the Select badge it is opened from (the badge spans
      --lane-bottom = 88px + the gesture inset, plus 46px), and lower still on edge-to-edge
      Android where the inset grows. One lane above the badge, like the KML edit bar. */
-  bottom: calc(var(--lane-bottom) + var(--badge-lane));
-  left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--lane-bottom) + var(--badge-lane) + var(--follow-step) + var(--badge-lift));
+  left: calc(50% + var(--centre-shift)); transform: translateX(-50%);
   z-index: 812;
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: center;
   background: var(--surface);
@@ -1425,8 +1450,8 @@ a.polyline-measure-controlOnBgColor:hover {
 .wtp-cancel:hover { color: var(--danger); }
 
 #kml-edit-bar {
-  position: absolute; bottom: calc(var(--lane-bottom) + var(--badge-lane));
-  left: 50%; transform: translateX(-50%);
+  position: absolute; bottom: calc(var(--lane-bottom) + var(--badge-lane) + var(--follow-step) + var(--badge-lift));
+  left: calc(50% + var(--centre-shift)); transform: translateX(-50%);
   transition: left .3s cubic-bezier(.4,0,.2,1);
   z-index: 810;
   display: flex; flex-direction: column; align-items: center; gap: 3px;
@@ -1445,8 +1470,11 @@ a.polyline-measure-controlOnBgColor:hover {
 #kml-edit-bar { max-width: calc(100vw - 24px - var(--sal) - var(--sar)); }
 #kml-edit-hint { font-size: 10px; color: var(--text-muted); letter-spacing: .2px; white-space: normal; text-align: center; }
 /* Narrow phones: label, buttons and hint no longer fit one row (~340 px), so the label takes
-   its own line above the buttons instead of pushing Annulla off the bar. */
-@media (max-width: 400px) {
+   its own line above the buttons instead of pushing Annulla off the bar.
+   Up to 460 px, not 400: the one-row bar is 350 px wide and centred, and the bottom-right
+   buttons start 54 px from the edge, so it only clears them from 458 px. Measured 11/11 at
+   401, 412, 423 and 440 px: it sat 9 to 28 px over the nav and GPS buttons. */
+@media (max-width: 460px) {
   #kml-edit-main { flex-wrap: wrap; row-gap: 2px; }
   #kml-edit-label { flex-basis: 100%; text-align: center; }
 }
@@ -1523,7 +1551,6 @@ a.polyline-measure-controlOnBgColor:hover {
 }
 #flight-panel.hidden { display: none; }
 #flight-panel.collapsed .flight-grid { display: none; }
-.flight-drag-header { touch-action: none; }
 #nav-hud {
   position: absolute;
   bottom: var(--lane-bottom); left: 10px;
@@ -1549,8 +1576,8 @@ a.polyline-measure-controlOnBgColor:hover {
 #nav-hud.hidden { display: none; }
 #nav-follow-badge {
   position: absolute;
-  bottom: var(--lane-bottom);
-  left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--lane-bottom) + var(--badge-lift) + var(--sel-step));
+  left: calc(50% + var(--centre-shift)); transform: translateX(-50%);
   z-index: 810;
   background: var(--surface);
   border: 1px solid var(--accent);
@@ -1574,7 +1601,6 @@ a.polyline-measure-controlOnBgColor:hover {
   display: flex; align-items: center; gap: 6px;
   white-space: nowrap;
 }
-.nav-hud-drag-header { touch-action: none; }
 .nav-hud-grid {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -1589,6 +1615,8 @@ a.polyline-measure-controlOnBgColor:hover {
   background: var(--border);
   border-top: 1px solid var(--border);
 }
+/* Long trips: navigation.js steps this down until the three readings fit (_fitHudValues). */
+.nav-hud-grid .flight-val { font-size: var(--nh-font, 22px); }
 /* Altitude at cruise is five digits: it needs the full row, not a third of it. */
 .flight-wide { grid-column: 1 / -1; }
 .flight-block {
@@ -1644,7 +1672,9 @@ a.polyline-measure-controlOnBgColor:hover {
 }
 /* Landscape-only collapsible headers: hidden in portrait. */
 .leaflet-control-toggle { display: none; }
-.leaflet-control-toggle a.toggle-on { background: #eaeaea !important; }
+/* Open = the same blue as every other switched-on map button (draw tool, measure). It was
+   #eaeaea: near-white under a near-white icon, so an open toggle read as a blank tile. */
+.leaflet-control-toggle a.toggle-on { background-color: #005ce6 !important; color: #fff !important; }
 .leaflet-control-gps a.gps-on {
   background: linear-gradient(135deg, #0066ff 0%, #00ccff 100%) !important;
   color: #fff !important;
@@ -1757,15 +1787,15 @@ a.polyline-measure-controlOnBgColor:hover {
   letter-spacing: .3px;
 }
 
-/* ===== DRAGGABLE PANELS ===== */
-.nav-drag-header { cursor: grab; user-select: none; }
-.nav-drag-header:active { cursor: grabbing; }
-#nav-panel { touch-action: none; }
-.mt-drag-header { cursor: grab; user-select: none; }
-.mt-drag-header:active { cursor: grabbing; }
-.mt-grip { padding: 0 6px; color: var(--text-muted); cursor: grab; font-size: 16px; line-height: 1; display: flex; align-items: center; user-select: none; touch-action: none; }
-.mt-grip:active { cursor: grabbing; }
-#map-tools { touch-action: none; }
+/* ===== DRAGGABLE PANELS =====
+   One treatment for the four movable panels (makePanelDraggable in utils.js). The header is the
+   handle: touch-action:none sits on it and nowhere else, so the panel body keeps native scrolling
+   (it used to be on the whole of #map-tools and #nav-panel, which froze the scroll of
+   .mt-panel). The ⋮⋮ grip is the visible cue that the header can be dragged. */
+.panel-drag-handle { touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; }
+.panel-drag-handle:active { cursor: grabbing; }
+.panel-drag-handle button { cursor: pointer; }
+.mt-grip { padding: 0 6px; color: var(--text-muted); font-size: 16px; line-height: 1; display: flex; align-items: center; flex-shrink: 0; align-self: stretch; }
 
 /* ===== ADDRESS AUTOCOMPLETE ===== */
 .autocomplete-dropdown {
@@ -1991,37 +2021,60 @@ a.polyline-measure-controlOnBgColor:hover {
   .guide-key { font-size: 11px; }
 }
 
-/* Landscape corto: evita sovrapposizione tra colonna controlli top-right e bottom-right,
-   e riduce chrome+bottoni per non affollare l'altezza ridotta del phone ruotato. */
+/* Rotated phone (short screen). The map buttons keep their full 40 px here: until 1.5.0 they
+   were shrunk to 30 px, under any touch target, and the two right-hand corners were clipped at
+   50vh with overflow:hidden. Seen on the device 11/11 as a dark strip between the buttons
+   (margin-bottom:1px on each <a> let the .leaflet-bar show through) and a bottom edge cut off.
+   What makes the room instead, measured at 735x369 and 800x360:
+   - the gap between stacked controls goes from 10 to 6 px, the corners sit 4 px from the side
+     edges, and the top-right pair lies side by side, so the right-hand column is the three
+     bottom buttons alone;
+   - the copyright band is one line here (the attribution has the full width to itself), so
+     22 px instead of 38. The old override dropped the band from the bottom corner while the
+     attribution still stepped down by it, which put the attribution line behind the status bar;
+   - the draw tools and the measure tools open BESIDE their toggle, not under it, so neither
+     column grows when one is opened. */
 @media (orientation: landscape) and (max-height: 500px) {
-  .leaflet-control-container .leaflet-top.leaflet-right,
-  .leaflet-control-container .leaflet-bottom.leaflet-right {
-    max-height: 50vh;
-    overflow: hidden;
-  }
-  .leaflet-control-container .leaflet-bar > a,
-  .leaflet-control-gps,
-  .leaflet-control-compass,
-  .leaflet-control-nav {
-    margin-bottom: 1px !important;
-  }
   .leaflet-control-attribution { font-size: 9px; padding: 1px 4px; }
-
-  /* Move the Leaflet control corners closer to map edges (10px default → 4px) to reclaim
-     precious vertical/horizontal space in rotated-phone view. */
-  /* Vertically the corners still have to clear the overlaid bars, so the 4px is added to
-     the bar height rather than replacing it. */
-  .leaflet-control-container .leaflet-top {
-    top: calc(var(--topbar-h) + var(--sat) + 4px) !important;
-  }
-  .leaflet-control-container .leaflet-bottom {
-    bottom: calc(var(--status-h) + var(--sab) + 4px) !important;
-  }
   .leaflet-control-container .leaflet-right  { right:  4px !important; }
   .leaflet-control-container .leaflet-left   { left:   4px !important; }
+  .leaflet-control-container .leaflet-top .leaflet-control    { margin-top: 6px; }
+  .leaflet-control-container .leaflet-bottom .leaflet-control:not(.leaflet-control-attribution) { margin-bottom: 6px; }
+  /* The attribution keeps its place in the flow here, right above the status bar, and the
+     corner comes down to meet it. The base rules lift the corner by the band and step the
+     attribution back down, which leaves its own 19 px slot empty under the buttons: room a
+     tall screen can spare and this one cannot (the bottom three met the top pair, 1 px apart). */
+  .leaflet-control-container .leaflet-bottom.leaflet-right { bottom: calc(var(--status-h) + var(--sab)); }
+  .leaflet-control-attribution { bottom: 0; }
 
   /* Compact chrome */
-  :root { --topbar-h: 42px; --status-h: 30px; }
+  :root { --topbar-h: 42px; --status-h: 30px; --copyright-band: 22px;
+    /* Map button size: 40 px wherever three of them fit under the top-right row, counting
+       the system bars (a media query cannot see those, the --sat/--sab variables can). Only a
+       screen with less room than that steps down, and never under 32. The sum taken off is the
+       two bars, the attribution line (19), the top row (50) and four 6 px gaps. */
+    --ctl: clamp(32px, calc((100vh - var(--topbar-h) - var(--sat) - var(--status-h) - var(--sab) - 93px) / 3 - 4px), 40px); }
+  .leaflet-bar:not(.leaflet-draw-toolbar) a,
+  .leaflet-control-gps a,
+  .leaflet-control-tools a,
+  .leaflet-control-nav a,
+  .leaflet-control-compass a,
+  .leaflet-control-toggle a {
+    width: var(--ctl) !important;
+    height: var(--ctl) !important;
+    line-height: var(--ctl) !important;
+  }
+
+  /* The two bottom-left readouts start beside the left control column (4 + 10 + 44 + 6 px),
+     not on top of it: the flight panel is 173 px tall and reached the zoom buttons. */
+  #nav-hud, #flight-panel { left: 64px; }
+  /* The two right-hand panels clear the top-right pair, which is a row here (see below):
+     4 + 10 + 44 + 6 + 44 + 6 px. */
+  #map-tools, #nav-panel { right: 114px; }
+  /* The top-right pair is a row here and ends 108 px from the edge (4 + 10 + 44 + 6 + 44); the
+     toast is centred, so it gives up that much and an 8 px gap on BOTH sides. A message lifted
+     to the height of that row by the stack under it otherwise lay across the ruler toggle. */
+  #toast { --toast-max-w: calc(100vw - 232px - var(--sal) - var(--sar)); }
   #topbar { gap: 6px; padding: 0 10px; }
   #statusbar .s-label { font-size: 8px; }
   #statusbar .s-val { font-size: 10px; }
@@ -2030,6 +2083,10 @@ a.polyline-measure-controlOnBgColor:hover {
   .btn { padding: 6px 12px; font-size: 12px; min-height: 28px; }
   .draw-save-btn, .draw-del-btn, .wfs-sel-btn { min-height: 32px; }
   .tab-btn { padding: 7px 3px; font-size: 8px; }
+  /* Same cut as on the portrait phone, worse: the sidebar is 290 px here, 48 per tab, and all
+     six labels ended in "…". Icon above the word, as in the last block of this file. */
+  .tab-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+  .tab-btn svg { margin: 0; }
   .mt-tab { padding: 6px 5px; font-size: 10px; }
   /* Fields stay one step below the phone type scale above: the height here is 500px at
      most, and a form is the tallest thing in the sidebar. Raised in step with that scale
@@ -2038,62 +2095,70 @@ a.polyline-measure-controlOnBgColor:hover {
   .field label { font-size: 11px; }
   .field input, .field select, .field textarea { padding: 6px 8px; font-size: 13px; }
 
-  /* Leaflet on-map controls (zoom bar, GPS, compass, nav): 40×40 → 30×30, font 18 → 13.
-     Overrides the base rules at .leaflet-bar a and .leaflet-control-gps/tools/nav/compass a. */
-  .leaflet-bar a,
-  .leaflet-control-gps a,
-  .leaflet-control-tools a,
-  .leaflet-control-nav a,
-  .leaflet-control-compass a,
-  .leaflet-control-toggle a {
-    width: 30px !important;
-    height: 30px !important;
-    line-height: 30px !important;
-    font-size: 13px !important;
-  }
   /* Collapsible headers active only in landscape */
-  .leaflet-control-toggle { display: block; margin-bottom: 1px !important; }
+  .leaflet-control-toggle { display: block; }
   /* Hide Draw + polylineMeasure stacks by default in landscape; toggle reveals them. */
   #map .leaflet-draw,
   #map .leaflet-polyline-measure { display: none !important; }
+  /* Opened, each one is laid out as a short grid beside its toggle column (54 px = the 10 px
+     side margin plus a 44 px control), level with the top of the column.
+     Draw: 5 tools in one row, the edit tools in a second (30 px cells, zoomed 1.333 = 40).
+     Measure: 3 buttons in one row. */
+  #map.draw-expanded .leaflet-draw { position: absolute; top: 0; left: 54px; }
+  /* Top right is a ROW here: [measure tools] [ruler toggle] [Vai a]. As a column the pair took
+     100 px of height above the three bottom-right buttons, and on a device the system bars take
+     another 50-60 px off the 369: the second button sat on the compass (seen 11/11; the bench
+     had been run without insets). Side by side the pair is one button tall. */
+  .leaflet-control-container .leaflet-top.leaflet-right { display: flex; align-items: flex-start; }
+  .leaflet-top.leaflet-right .leaflet-control { margin-right: 6px; }
+  .leaflet-top.leaflet-right .leaflet-polyline-measure { order: 1; }
+  .leaflet-top.leaflet-right .leaflet-toggle-measure   { order: 2; }
+  .leaflet-top.leaflet-right .leaflet-control-tools    { order: 3; margin-right: 10px; }
   #map.draw-expanded .leaflet-draw {
     display: flex !important;
     flex-direction: column;
     gap: 2px;
     width: max-content;
   }
-  #map.measure-expanded .leaflet-polyline-measure { display: block !important; }
-  /* Grid layout when expanded — keeps 30×30 icons (native sprite positions unchanged) and
-     lays them out horizontally so the column stays short.
-     Draw: 5-button draw toolbar + 1-button edit toolbar → 3-col grid = 2 rows for draw + 1 for edit.
-     Measure: 3 buttons → single row of 3. */
+  /* Each toolbar is exactly as wide as its own buttons (auto columns, not a fixed five): the
+     one-button edit row otherwise stretched to five cells and its shadow drew an empty
+     translucent box across the map. No frame or shadow around the group either: the buttons
+     are opaque tiles on their own. */
   #map.draw-expanded .leaflet-draw-toolbar,
   #map.measure-expanded .leaflet-polyline-measure {
     display: grid !important;
-    grid-template-columns: repeat(3, 30px);
+    grid-auto-flow: column;
     gap: 1px;
-    background: transparent;
-    border: none;
-    box-shadow: none;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
     width: max-content;
   }
+  #map.draw-expanded .leaflet-draw-toolbar { grid-auto-columns: 30px; }
+  #map.measure-expanded .leaflet-polyline-measure { grid-auto-columns: var(--ctl); }
   #map.draw-expanded .leaflet-draw-toolbar a,
   #map.measure-expanded .leaflet-polyline-measure a {
     margin: 0 !important;
   }
-  /* Force visible unicode/text labels on measure buttons (↦ × km/m) — the base landscape
-     shrink drops font-size to 13px, which makes the plugin's default 19px unicode-icon
-     look empty on Android WebView. Restore readable size + center align. Do NOT force
-     background-color or border, so the app's enabled-state highlight shows through
-     (measure: #005ce6 → blue; draw: #005ce6 passed through the invert(1) filter at
-     line 721 → renders as orange #ffa319 on screen). */
+  /* Fine / Togli ultimo / Annulla open after the END of the row of tools (5 x 40 px and four
+     1.333 px gaps = 205), not 40 px in as they do upright: there the tools are a column and the
+     bar opens beside it, here it would lie on top of the tool just chosen and its neighbours. */
+  #map.draw-expanded .leaflet-draw-section:first-child .leaflet-draw-actions { left: 206px; }
+  #map.measure-expanded .leaflet-polyline-measure { grid-template-columns: repeat(3, 40px); }
+  #map.draw-expanded .leaflet-draw-toolbar a,
+  #map.measure-expanded .leaflet-polyline-measure a {
+    margin: 0 !important;
+  }
+  /* Readable unicode/text labels on the measure buttons (↦ × km/mi/nm), centred, in the
+     theme's text colour: they were forced to #000, black on the dark button. The background is
+     left alone so the plugin's switched-on blue shows through. */
   #map.measure-expanded .leaflet-polyline-measure a {
     display: flex !important;
     align-items: center;
     justify-content: center;
     font-size: 16px !important;
     font-weight: bold;
-    color: #000 !important;
+    color: var(--text) !important;
     line-height: 1 !important;
     text-decoration: none !important;
   }
@@ -2112,6 +2177,16 @@ a.polyline-measure-controlOnBgColor:hover {
 .layer-item.wfs-loading .layer-name { animation: wfs-pulse 1.2s ease-in-out infinite; }
 @keyframes wfs-pulse { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
 
+/* Leaflet.draw's hint is one unbroken line hung to the right of the pointer: the edit hint is
+   407 px long on the bench and a phone is 360–412 wide, so it left the screen wherever the finger was.
+   It wraps here, and map.js (L.Draw.Tooltip.updatePosition) keeps the box inside the map; the
+   little arrow goes when the box had to move, because it would point at nothing.
+   pointer-events:none is part of the same change, not a nicety: a box moved back into the map
+   can end up under the finger, and it then took the tap meant for the map (test-drawtap went
+   red: 3 vertices from 4 taps). It is a hint, nothing in it is ever touched. */
+.leaflet-draw-tooltip { white-space: normal; width: max-content; max-width: min(240px, calc(100vw - 32px)); pointer-events: none; }
+.leaflet-draw-tooltip.tip-shifted::before { display: none; }
+
 /* A measure point whose tooltip has nothing to say on a touch screen (see _plMeasure in map.js)
    would otherwise open an empty bubble when tapped. */
 .leaflet-tooltip.polyline-measure-popupTooltip:empty { display: none; }
@@ -2122,6 +2197,11 @@ a.polyline-measure-controlOnBgColor:hover {
    compacts a 500 px-high screen on purpose, is left as it is. */
 @media (max-width: 640px) {
   .tab-btn { min-height: 44px; }
+  /* Six tabs share the phone's width, about 61 px each at 369: with the icon beside the word
+     three of the six were cut ("DISE…", "SALV…", "CATA…"). Icon above the word instead, and
+     every label is whole down to 320 px (looked at on the bench at 369 and 320). */
+  .tab-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
+  .tab-btn svg { margin: 0; }
   .field input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),
   .field select { min-height: 44px; }
   .draw-desc-input { min-height: 40px; }

@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="it">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#0f1117">
+  <meta name="theme-color" content="#0c1120">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>GISCatasto</title>
@@ -50,17 +50,23 @@
   })();
   </script>
   <!-- Whether the system bar insets are ours to pad for. The meta viewport above carries
-       viewport-fit=cover, so env(safe-area-inset-*) reports the bars on every Android —
-       but only Android 15 forces edge-to-edge for apps targeting SDK 35+. Below it the
-       system has already shrunk the WebView to sit between the bars, so padding for them
-       again reserved the same ~100 CSS px twice: that was the dark band above the toolbar
-       and below the coordinate readout. Runs before first paint to avoid a reflow.
-       Unknown user agents keep the insets: over-padding is cosmetic, while dropping a
-       real inset would slide the toolbar under the status bar. -->
+       viewport-fit=cover, so env(safe-area-inset-*) reports the bars on every Android. Two
+       cases where the page must NOT pad for them, because the window already sits between
+       the bars and padding again reserves the same space twice (the dark bands above the
+       toolbar and below the coordinate readout):
+       - inside the app shell (an Android WebView, "; wv" in the user agent), on EVERY Android
+         version: cordova-android 15 lays the WebView out between the system bars and the
+         display cutout by itself unless AndroidEdgeToEdge is set, and config.xml does not
+         set it. Seen on Android 16: insets 38/40 px reported, window already 78 px shorter
+         than the screen. Setting AndroidEdgeToEdge one day means dropping this rule.
+       - in a browser below Android 15, which does not draw edge-to-edge.
+       Runs before first paint to avoid a reflow. Unknown user agents keep the insets:
+       over-padding is cosmetic, while dropping a real inset would slide the toolbar under
+       the status bar. -->
   <script>
   (function nvEdgeToEdge() {
-    var m = /Android (\d+)/.exec(navigator.userAgent);
-    if (m && parseInt(m[1], 10) < 15) {
+    var ua = navigator.userAgent, m = /Android (\d+)/.exec(ua);
+    if (m && (/; wv\)/.test(ua) || parseInt(m[1], 10) < 15)) {
       document.documentElement.classList.add('no-edge-to-edge');
     }
   })();
@@ -641,7 +647,7 @@
         <div class="card">
           <div class="card-header">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            Quick reference
+            Guida rapida
           </div>
           <div class="card-body" style="gap:12px">
 
@@ -651,6 +657,8 @@
               <div class="guide-item"><span class="guide-key">Pizzico</span><span class="guide-desc">Zoom avanti e indietro</span></div>
               <div class="guide-item"><span class="guide-key">Rotazione a 2 dita</span><span class="guide-desc">La rotazione è disattivata di serie: la mappa resta con il nord in alto, così un pizzico non la ruota per sbaglio. Tocca la bussola ↘ per cambiare: azzurra accesa = rotazione libera (le due dita ruotano), spenta = bloccata a nord. Lo zoom a pizzico funziona comunque, in entrambi i casi.</span></div>
               <div class="guide-item"><span class="guide-key">Tocco prolungato</span><span class="guide-desc">Menù contestuale con tutti i formati di coordinate</span></div>
+              <div class="guide-item"><span class="guide-key">Pannelli mobili ⋮⋮</span><span class="guide-desc">I pannelli Vai a/Converti e Naviga e il cruscotto di navigazione si spostano trascinandoli dalla maniglia ⋮⋮ nell’intestazione. Un doppio tocco sulla maniglia li riporta al loro posto. Finché un pannello sta al suo posto, i pulsanti al centro (Seleziona, Ricentra) e gli avvisi gli lasciano spazio, di fianco o sopra; spostato altrove, quello spazio si libera.</span></div>
+              <div class="guide-item"><span class="guide-key">Telefono in orizzontale</span><span class="guide-desc">Con il telefono ruotato gli strumenti di disegno e di misura restano chiusi per lasciare spazio alla mappa: si aprono dal pulsante con la matita, in alto a sinistra, e da quello con il righello, in alto a destra, e compaiono di fianco al pulsante. Un secondo tocco li richiude. I pannelli più alti dello schermo scorrono al loro interno.</span></div>
             </div>
 
             <div class="guide-section">
@@ -664,8 +672,8 @@
               <div class="guide-item"><span class="guide-key">Basemap</span><span class="guide-desc">Scegli la mappa di sfondo dall’elenco. In fondo, il blocco richiudibile <b>“Cartografia regionale — esempi”</b> raccoglie alcune carte tecniche regionali (CTR): sono esempi, non una copertura nazionale, e le altre regioni si aggiungono da “Aggiungi mappa web”. Una CTR è disegnata per scale grandi: <b>si vede solo dallo zoom indicato nel suo nome</b>, e sotto quella soglia resta un foglio bianco — mostrarla comunque produrrebbe una massa di tratti illeggibile</span></div>
               <div class="guide-item"><span class="guide-key">Aggiungi mappa web</span><span class="guide-desc">Aggiungi per URL un WMS, un WFS, un WMTS/XYZ o un ArcGIS MapServer. Overlay WMS: una sola immagine GetMap per vista (non a tile), richiesta nel CRS geografico del server (EPSG:4258/4326/6706) o in Web Mercator (EPSG:3857) — ideale per sovrapposizioni raster come le etichette. WFS: geometrie vettoriali (poligoni e punti) scaricate per vista sopra lo zoom minimo impostato (di serie 15: valori più bassi rischiano scaricamenti enormi) e disegnate come GeoJSON — la scelta giusta per dati catastali e topografici. Tocca “Leggi i layer” per ricavare da solo nomi, CRS e versione del protocollo dalle capabilities del server; per i WMS riporta anche l’intervallo di zoom in cui il layer viene disegnato, perché fuori da quell’intervallo il server risponde con un’immagine vuota invece che con un errore — un overlay WMS aggiunto così viene poi richiesto solo dentro l’intervallo, e non dipinge più un riquadro vuoto sotto di esso. WMTS/XYZ e le cache ArcGIS entrano come basemap, i WMS come overlay, ma la scelta resta modificabile. Gli overlay vengono salvati e ripristinati al lancio successivo con la loro opacità e visibilità. Funziona con i server conformi OGC (GeoServer, deegree, MapServer, QGIS Server); gli endpoint MapServer con <code>?map=...</code> vengono conservati. Provato su Agenzia delle Entrate INSPIRE, PCN (minambiente) e IGM.</span></div>
               <div class="guide-item"><span class="guide-key">Filtro WFS</span><span class="guide-desc">I campi attributo e valori mostrano solo le geometrie che corrispondono. Carica prima il layer senza filtro e tocca una geometria per leggere i nomi degli attributi nel popup. Più valori esatti: separati da virgola (es. <code>A001,B002</code>). Caratteri jolly: <code>*</code> (qualsiasi sequenza), <code>?</code> (un solo carattere) — es. <code>MIL*</code>. Usa l’OGC Filter Encoding (<code>PropertyIsEqualTo</code> / <code>PropertyIsLike</code>), supportato da GeoServer, deegree, MapServer e QGIS Server. A layer caricato, tocca il pulsante ▽ sulla sua riga nel pannello per modificare il filtro sul posto: non serve rimuoverlo e riaggiungerlo.</span></div>
-              <div class="guide-item"><span class="guide-key">Selezione WFS</span><span class="guide-desc">Quando ci sono layer WFS caricati compare un distintivo con “⊙ Seleziona”. Toccalo per attivare la selezione con un tocco: se i layer WFS sono più di uno appare un elenco per scegliere il bersaglio — solo le geometrie di quel layer rispondono al tocco, le altre si aprono normalmente. Scelto il layer, tocca una geometria per selezionarla o deselezionarla subito, senza popup. Le geometrie selezionate mostrano un’etichetta fissa presa dalla proprietà <code>label</code> o <code>name</code> quando c’è (nel catasto: codice o numero della particella). Il distintivo riporta il nome del layer attivo. Finché la modalità è accesa il layer bersaglio viene portato temporaneamente in primo piano, così riceve sempre i tuoi tocchi qualunque sia la sua posizione nell’elenco; uscendo, il tuo ordine torna com’era. Tocca di nuovo “⊙ Seleziona” per azzerare. In alternativa funziona anche il pulsante “☆ Seleziona” nel popup. Il contatore mostra quante ne hai scelte: tocca ⬇ KML per esportarle, ✕ per deselezionare tutto. Il KML esportato conserva colore e trasparenza del layer, quindi si apre già vestito in Google Earth.</span></div>
-              <div class="guide-item"><span class="guide-key">Carica file</span><span class="guide-desc">Importa KML, KMZ, GeoJSON e GPX, trascinandoli o toccando. Un KML esportato dalla selezione WFS mostra gli attributi catastali nel popup quando lo tocchi. Ricaricare un file già importato lo aggiorna sul posto: mantiene la sua posizione nell’elenco invece di essere aggiunto una seconda volta.</span></div>
+              <div class="guide-item"><span class="guide-key">Selezione WFS</span><span class="guide-desc">Quando ci sono layer WFS caricati compare un distintivo con “◎ Seleziona”. Toccalo per attivare la selezione con un tocco: se i layer WFS sono più di uno appare un elenco per scegliere il bersaglio — solo le geometrie di quel layer rispondono al tocco, le altre si aprono normalmente. Scelto il layer, tocca una geometria per selezionarla o deselezionarla subito, senza popup. Le geometrie selezionate mostrano un’etichetta fissa presa dalla proprietà <code>label</code> o <code>name</code> quando c’è (nel catasto: codice o numero della particella). Il distintivo riporta il nome del layer attivo. Finché la modalità è accesa il layer bersaglio viene portato temporaneamente in primo piano, così riceve sempre i tuoi tocchi qualunque sia la sua posizione nell’elenco; uscendo, il tuo ordine torna com’era. Tocca di nuovo “◎ Seleziona” per azzerare. In alternativa funziona anche il pulsante “☆ Seleziona” nel popup. Il contatore mostra quante ne hai scelte: tocca ⬇ KML per esportarle, ✕ per deselezionare tutto. Il KML esportato conserva colore e trasparenza del layer, quindi si apre già vestito in Google Earth.</span></div>
+              <div class="guide-item"><span class="guide-key">Carica file</span><span class="guide-desc">Importa KML, KMZ, GeoJSON e GPX toccando l’area di caricamento. Un KML esportato dalla selezione WFS mostra gli attributi catastali nel popup quando lo tocchi. Ricaricare un file già importato lo aggiorna sul posto: mantiene la sua posizione nell’elenco invece di essere aggiunto una seconda volta.</span></div>
               <div class="guide-item"><span class="guide-key">Elenco dei layer</span><span class="guide-desc">Accendi e spegni, regola l’opacità, riordina trascinando la maniglia ⋮ a sinistra della riga, esporta o elimina. Doppio tocco sul nome per rinominarlo. L’ordine dell’elenco è l’ordine di sovrapposizione, senza vincoli: qualsiasi layer può stare sopra o sotto qualsiasi altro, anche un WMS raster sopra un file importato o sopra il catasto. L’ordine che imposti viene ricordato fra un avvio e l’altro. I layer nuovi entrano sotto quelli che coprirebbero — un raster sotto i vettori, una linea sopra le altre linee — e da lì li sposti. I pulsanti che non hanno senso restano nascosti: gli overlay WMS raster non hanno lo zoom all’estensione (non ne hanno una vettoriale) e i layer senza file di origine (WMS/WFS) non hanno l’esportazione.</span></div>
               <div class="guide-item"><span class="guide-key">Vuoto (bucato) ∅</span><span class="guide-desc">Tocca il pulsante ∅ su un layer da file per lasciarne solo il bordo, con il riempimento trasparente. Tocca di nuovo per tornare indietro. Vale per i poligoni di KML, GeoJSON e GPX. Lo stato viene salvato e ripristinato al lancio successivo.</span></div>
               <div class="guide-item"><span class="guide-key">Modifica KML ✏</span><span class="guide-desc">Tocca la matita su un layer KML per modificarne i vertici: trascinali per spostarli, doppio tocco per eliminarne uno, trascina un punto intermedio tratteggiato per aggiungerne uno nuovo. Annulla le scarta tutte. Per cambiare nome e descrizione di un elemento, toccalo sulla mappa e usa “Modifica nome e descrizione” nel suo riquadro.</span></div>
@@ -681,7 +689,7 @@
               <div class="guide-item"><span class="guide-key">Salvataggio automatico</span><span class="guide-desc">I disegni — nome, descrizione, colore e icona compresi — si salvano da soli a ogni modifica e tornano alla riapertura</span></div>
               <div class="guide-item"><span class="guide-key">Esporta tutto</span><span class="guide-desc">Esporta tutti i disegni in KML o GeoJSON (con colore, icona, tipo, opacità e le misure)</span></div>
               <div class="guide-item"><span class="guide-key">Cancella tutto</span><span class="guide-desc">Chiede conferma prima di eliminare tutti i disegni</span></div>
-              <div class="guide-item"><span class="guide-key">Dissolvi KML</span><span class="guide-desc">Nella sezione Strumenti KML del pannello Disegno, tocca “Dissolvi geometrie KML” per aprire l’elenco dei layer. Spunta uno o più KML caricati, poi tocca “Dissolvi i selezionati”: tutti i poligoni dei layer scelti vengono fusi in una sola geometria e i confini interni spariscono. Buchi e aree staccate restano tali. Scrivi nome e descrizione e salva come nuovo layer KML. Serve turf.min.js nella cartella dell’app.</span></div>
+              <div class="guide-item"><span class="guide-key">Dissolvi KML</span><span class="guide-desc">Nella sezione Strumenti KML del pannello Disegno, tocca “Dissolvi geometrie KML” per aprire l’elenco dei layer. Spunta uno o più KML caricati, poi tocca “Dissolvi i selezionati”: tutti i poligoni dei layer scelti vengono fusi in una sola geometria e i confini interni spariscono. Buchi e aree staccate restano tali. Scrivi nome e descrizione e salva come nuovo layer KML.</span></div>
             </div>
 
             <div class="guide-section">
@@ -703,17 +711,17 @@
               <div class="guide-item"><span class="guide-key">Freccia ↘</span><span class="guide-desc">Imposta la destinazione per indirizzo o toccando la mappa — auto, a piedi o bicicletta — percorso calcolato da OSRM</span></div>
               <div class="guide-item"><span class="guide-key">Orientamento della mappa</span><span class="guide-desc">Durante la navigazione la mappa ruota per seguire la tua direzione di marcia letta dal GPS: succede anche con la rotazione bloccata a nord, e la bussola ↘ si accende in ambra per segnalarlo. Se ti fermi, la mappa tiene l’ultimo orientamento invece di girare a vuoto. Terminata la navigazione torna a nord, a meno che tu non abbia acceso la rotazione libera dalla bussola.</span></div>
               <div class="guide-item"><span class="guide-key">Cono visivo</span><span class="guide-desc">A piedi, mentre ti muovi, viene disegnato un settore di 70° e 45 m lungo la direzione di marcia; quando ti fermi sparisce, perché una direzione non c’è più</span></div>
-              <div class="guide-item"><span class="guide-key">Cruscotto di navigazione</span><span class="guide-desc">Un pannellino in basso a sinistra mostra in tempo reale velocità, distanza dalla destinazione e orario di arrivo. Si trascina dall’intestazione e sparisce da solo a navigazione finita</span></div>
+              <div class="guide-item"><span class="guide-key">Cruscotto di navigazione</span><span class="guide-desc">Un pannellino in basso a sinistra mostra in tempo reale velocità, distanza dalla destinazione e orario di arrivo. Si sposta dalla maniglia ⋮⋮ e sparisce da solo a navigazione finita</span></div>
               <div class="guide-item"><span class="guide-key">Fuori percorso</span><span class="guide-desc">Ricalcola da solo il percorso se ti allontani di oltre 50 m</span></div>
               <div class="guide-item"><span class="guide-key">Esporta percorso</span><span class="guide-desc">A percorso disegnato, esportalo in KML (finisce nella cartella Download e funziona offline) oppure salvalo come disegno: una linea cliccabile che resta sopra il catasto anche dopo che hai chiuso la navigazione. La geometria del percorso deriva dai dati OpenStreetMap (ODbL).</span></div>
               <div class="guide-item"><span class="guide-key">Reset</span><span class="guide-desc">Cancella destinazione e percorso — pronta per una navigazione nuova</span></div>
-              <div class="guide-item"><span class="guide-key">Trascina il pannello</span><span class="guide-desc">Tieni premuta l’intestazione per spostare il pannello di navigazione dove vuoi</span></div>
+              <div class="guide-item"><span class="guide-key">Ricentra</span><span class="guide-desc">Se sposti la mappa durante la navigazione, smette di seguirti e compare il pulsante “Ricentra”: toccalo per tornare a seguire la tua posizione</span></div>
             </div>
 
 
             <div class="guide-section">
               <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="12,3 14,11 12,10 10,11" fill="currentColor"/></svg>Bussola</h4>
-              <div class="guide-item"><span class="guide-key">Bussola ↘</span><span class="guide-desc">Indica il nord e segue la rotazione della mappa. Toccala per cambiare modo: spenta = bloccata col nord in alto (impostazione di serie), azzurra accesa = rotazione libera. Toccandola da bloccata ricentra anche sulla tua posizione GPS. In navigazione la mappa si orienta da sola secondo la marcia e la bussola diventa ambra; quando ti fermi torna a nord, salvo che tu abbia lasciato la rotazione libera. La scelta viene ricordata fra un avvio e l’altro.</span></div>
+              <div class="guide-item"><span class="guide-key">Bussola ↘</span><span class="guide-desc">Indica il nord e segue la rotazione della mappa. Toccala per cambiare modo: spenta = bloccata col nord in alto (impostazione di serie), azzurra accesa = rotazione libera. Quando la blocchi, la mappa torna a nord e si ricentra sulla tua posizione GPS. In navigazione la mappa si orienta da sola secondo la marcia e la bussola diventa ambra; a navigazione finita torna a nord, salvo che tu abbia lasciato la rotazione libera. La scelta viene ricordata fra un avvio e l’altro.</span></div>
             </div>
 
             <div class="guide-section">
@@ -766,8 +774,8 @@
 
     <!-- FLOATING TOOLS PANEL -->
     <div id="map-tools" class="hidden">
-      <div class="mt-header">
-        <span class="mt-grip" title="Trascina">&#8942;&#8942;</span>
+      <div class="mt-header panel-drag-handle">
+        <span class="mt-grip" title="Trascina per spostare · doppio tocco per riportarlo a posto" aria-hidden="true">&#8942;&#8942;</span>
         <button class="mt-tab active" data-mt="goto">Vai a</button>
         <button class="mt-tab" data-mt="convert">Converti</button>
         <button class="mt-close" id="map-tools-close" title="Chiudi">&#10005;</button>
@@ -802,8 +810,9 @@
 
     <!-- NAVIGATION PANEL -->
     <div id="nav-panel" class="hidden">
-      <div class="mt-header nav-drag-header">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:10px;flex-shrink:0;color:var(--accent)"><polygon points="3,11 22,2 13,21 11,13 3,11"/></svg>
+      <div class="mt-header nav-drag-header panel-drag-handle">
+        <span class="mt-grip" title="Trascina per spostare · doppio tocco per riportarlo a posto" aria-hidden="true">&#8942;&#8942;</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:2px;flex-shrink:0;color:var(--accent)"><polygon points="3,11 22,2 13,21 11,13 3,11"/></svg>
         <span style="flex:1;padding:9px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent)">Naviga</span>
         <button class="mt-close" id="nav-close" title="Riduci">&#8722;</button>
       </div>
@@ -905,8 +914,9 @@
 
     <!-- FLIGHT PANEL -->
     <div id="flight-panel" class="hidden">
-      <div class="mt-header flight-drag-header">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="margin-left:10px;flex-shrink:0;color:var(--accent)"><path d="M21 16v-2l-8-5V3.5C13 2.67 12.33 2 11.5 2S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>
+      <div class="mt-header flight-drag-header panel-drag-handle">
+        <span class="mt-grip" title="Trascina per spostare · doppio tocco per riportarlo a posto" aria-hidden="true">&#8942;&#8942;</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="margin-left:2px;flex-shrink:0;color:var(--accent)"><path d="M21 16v-2l-8-5V3.5C13 2.67 12.33 2 11.5 2S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>
         <span style="flex:1;padding:9px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent)">Volo</span>
         <button class="mt-close" id="flight-collapse">&#8722;</button>
       </div>
@@ -940,8 +950,9 @@
 
     <!-- NAV HUD -->
     <div id="nav-hud" class="hidden">
-      <div class="mt-header nav-hud-drag-header">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:10px;flex-shrink:0;color:var(--accent)"><polygon points="3,11 22,2 13,21 11,13 3,11"/></svg>
+      <div class="mt-header nav-hud-drag-header panel-drag-handle">
+        <span class="mt-grip" title="Trascina per spostare · doppio tocco per riportarlo a posto" aria-hidden="true">&#8942;&#8942;</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:2px;flex-shrink:0;color:var(--accent)"><polygon points="3,11 22,2 13,21 11,13 3,11"/></svg>
         <span style="flex:1;padding:9px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent)">Navigazione</span>
       </div>
       <div class="nav-hud-grid">
@@ -1018,7 +1029,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.4.9</span></div>
+      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.5.0</span></div>
       <div class="about-row"><span class="lbl">Autore</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">Licenza</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — software libero</a></span></div>
       <div class="about-row"><span class="lbl">Tecnologia</span><span class="val">Leaflet · Cordova · Android</span></div>

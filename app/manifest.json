@@ -5,7 +5,7 @@
   "start_url": "./geoapp.html",
   "display": "standalone",
   "orientation": "any",
-  "theme_color": "#0f1117",
+  "theme_color": "#0c1120",
   "background_color": "#0f1117",
   "lang": "it",
   "categories": ["navigation", "utilities"],

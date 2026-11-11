@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='utf-8'?>
-<widget id="com.geotool.giscatasto" version="1.4.9"
+<widget id="com.geotool.giscatasto" version="1.5.0"
     xmlns="http://www.w3.org/ns/widgets"
     xmlns:cdv="http://cordova.apache.org/ns/1.0"
     xmlns:android="http://schemas.android.com/apk/res/android">
@@ -69,7 +69,15 @@
   <preference name="SplashScreenDelay" value="0" />
   <preference name="AutoHideSplashScreen" value="true" />
   <preference name="DisallowOverscroll" value="true" />
-  <preference name="StatusBarBackgroundColor" value="#0f1117" />
+  <!-- The strip behind the system status bar meets the top bar, so it takes the top bar's own
+       first colour (app.css #topbar gradient starts at #0c1120). It was #0f1117, a neutral black
+       next to a blue-black: unnoticed while a dark band sat between the two (insets counted
+       twice until 1.5.0), a seam once they touch. -->
+  <preference name="StatusBarBackgroundColor" value="#0c1120" />
+  <!-- The area behind the Android navigation bar. Without this cordova-android 15 paints it in
+       the SYSTEM theme colour (SystemBarPlugin.getUiModeColor): near-white on a phone in light
+       mode, under an app that is always dark. #060a14 is where the #statusbar gradient ends. -->
+  <preference name="BackgroundColor" value="0xff060a14" />
   <preference name="StatusBarStyle" value="lightcontent" />
   <preference name="Orientation" value="user" />
   <preference name="EnableViewportScale" value="false" />

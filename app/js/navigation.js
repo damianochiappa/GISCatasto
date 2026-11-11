@@ -361,99 +361,35 @@
     }
     if (hudEta) {
       let eta = '--';
-      if (spd != null && spd > 0.5) {
-        const sec = dst / spd;
-        eta = sec < 3600 ? Math.round(sec / 60) + '' : Math.floor(sec / 3600) + 'h' + String(Math.round((sec % 3600) / 60)).padStart(2, '0');
-      } else if (_navTotalDist > 0 && _navTotalDuration > 0) {
-        const sec = _navTotalDuration * (dst / _navTotalDist);
-        eta = sec < 3600 ? Math.round(sec / 60) + '' : Math.floor(sec / 3600) + 'h' + String(Math.round((sec % 3600) / 60)).padStart(2, '0');
-      }
+      // Whole minutes first, then split: rounding the minutes after the split printed "1h60".
+      const fmt = sec => { const m = Math.round(sec / 60); return m < 60 ? m + '' : Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0'); };
+      if (spd != null && spd > 0.5) eta = fmt(dst / spd);
+      else if (_navTotalDist > 0 && _navTotalDuration > 0) eta = fmt(_navTotalDuration * (dst / _navTotalDist));
       hudEta.textContent = eta;
     }
+    _fitHudValues();
   };
 
-  /* ===== DRAG ===== */
-  (function () {
-    const panel = document.getElementById('nav-panel');
-    const header = panel.querySelector('.nav-drag-header');
-    let dragging = false, startX, startY, origLeft, origTop;
+  /* The three readings share 232 px at 22 px type: about twelve characters between them. A long
+     trip needs more ("1234.5" km and "12h05" came to 252 px on the bench) and the ETA was cut by
+     the panel's overflow. Only then the type steps down, one pixel at a time, until the row the
+     browser laid out fits; ordinary trips keep the full size. Asked of the layout rather than
+     computed from a character width, so it holds at any Android font scale. Redone only when the
+     number of characters changes: a fix a second must not cost a layout each. */
+  let _hudFitKey = '';
+  function _fitHudValues() {
+    const grid = document.querySelector('#nav-hud .nav-hud-grid');
+    if (!grid || !grid.clientWidth) return;
+    const key = ['nh-spd', 'nh-dst', 'nh-eta'].map(i => { const e = document.getElementById(i); return e ? e.textContent.length : 0; }).join(',');
+    if (key === _hudFitKey) return;
+    _hudFitKey = key;
+    grid.style.removeProperty('--nh-font');
+    for (let px = 21; px >= 13 && grid.scrollWidth > grid.clientWidth; px--) grid.style.setProperty('--nh-font', px + 'px');
+  }
+  window.navHudFit = _fitHudValues;   // the bench drives it with readings of its own (test-hudeta)
 
-    function _getPos() {
-      const s = panel.style;
-      return {
-        left: parseFloat(s.left) || 0,
-        top:  parseFloat(s.top)  || 0
-      };
-    }
-
-    function _onStart(cx, cy) {
-      dragging = true;
-      panel.style.zIndex = ++window._panelZTop;
-      startX = cx; startY = cy;
-      const pos = _getPos();
-      origLeft = pos.left; origTop = pos.top;
-      /* switch to absolute positioning driven by left/top */
-      if (!panel.style.left) {
-        const r = panel.getBoundingClientRect();
-        panel.style.bottom = 'auto';
-        panel.style.right  = 'auto';
-        panel.style.left   = r.left + 'px';
-        panel.style.top    = r.top  + 'px';
-        origLeft = r.left; origTop = r.top;
-      }
-    }
-
-    function _onMove(cx, cy) {
-      if (!dragging) return;
-      const dx = cx - startX, dy = cy - startY;
-      const mw = window.innerWidth, mh = window.innerHeight;
-      panel.style.left = Math.max(0, Math.min(mw - panel.offsetWidth,  origLeft + dx)) + 'px';
-      panel.style.top  = Math.max(0, Math.min(mh - panel.offsetHeight, origTop  + dy)) + 'px';
-    }
-
-    function _onEnd() { dragging = false; }
-
-    header.addEventListener('mousedown',  e => { _onStart(e.clientX, e.clientY); e.preventDefault(); });
-    header.addEventListener('touchstart', e => { if (e.target.closest('button')) return; e.preventDefault(); _onStart(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
-    document.addEventListener('mousemove',  e => _onMove(e.clientX, e.clientY));
-    document.addEventListener('touchmove',  e => { if (dragging) { _onMove(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); } }, { passive: false });
-    document.addEventListener('mouseup',  _onEnd);
-    document.addEventListener('touchend', _onEnd);
-  })();
-
-  /* ===== NAV HUD DRAG ===== */
-  (function () {
-    const hud    = document.getElementById('nav-hud');
-    const header = hud.querySelector('.nav-hud-drag-header');
-    let dragging = false, startX, startY, origLeft, origTop;
-
-    function _getPos() {
-      return { left: parseFloat(hud.style.left) || 0, top: parseFloat(hud.style.top) || 0 };
-    }
-    function _onStart(cx, cy) {
-      dragging = true; startX = cx; startY = cy;
-      hud.style.zIndex = ++window._panelZTop;
-      if (!hud.style.left) {
-        const r = hud.getBoundingClientRect();
-        hud.style.bottom = 'auto'; hud.style.right = 'auto';
-        hud.style.left = r.left + 'px'; hud.style.top = r.top + 'px';
-      }
-      const pos = _getPos(); origLeft = pos.left; origTop = pos.top;
-    }
-    function _onMove(cx, cy) {
-      if (!dragging) return;
-      const mw = window.innerWidth, mh = window.innerHeight;
-      hud.style.left = Math.max(0, Math.min(mw - hud.offsetWidth,  origLeft + cx - startX)) + 'px';
-      hud.style.top  = Math.max(0, Math.min(mh - hud.offsetHeight, origTop  + cy - startY)) + 'px';
-    }
-    function _onEnd() { dragging = false; }
-
-    header.addEventListener('mousedown',  e => { _onStart(e.clientX, e.clientY); e.preventDefault(); });
-    header.addEventListener('touchstart', e => { if (e.target.closest('button')) return; e.preventDefault(); _onStart(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
-    document.addEventListener('mousemove',  e => _onMove(e.clientX, e.clientY));
-    document.addEventListener('touchmove',  e => { if (dragging) { _onMove(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); } }, { passive: false });
-    document.addEventListener('mouseup',  _onEnd);
-    document.addEventListener('touchend', _onEnd);
-  })();
+  /* ===== DRAG (panel and HUD) ===== */
+  makePanelDraggable(document.getElementById('nav-panel'), document.querySelector('#nav-panel .nav-drag-header'));
+  makePanelDraggable(document.getElementById('nav-hud'),   document.querySelector('#nav-hud .nav-hud-drag-header'));
 
 })();

@@ -95,7 +95,7 @@
       "hollow": true,
       "pane": "wfs-fogli",
       "visible": true,
-      "zOrder": 6
+      "zOrder": 5
     },
     {
       "id": "custom_ws_13",
@@ -113,7 +113,7 @@
       "hollow": true,
       "pane": "wfs-particelle",
       "visible": true,
-      "zOrder": 5
+      "zOrder": 6
     },
     {
       "id": "custom_ws_15",

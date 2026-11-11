@@ -432,6 +432,37 @@ L.Draw.Rectangle.include({
   d.edit.handlers.remove.tooltip.text  = 'Tocca una forma per eliminarla.';
 })();
 
+/* The drawing and editing hint stays on screen. Leaflet.draw pins it to the pointer and never
+   looks at the edges; on a phone it stays at the last touch, so a touch on the right half left
+   it cut (seen on the device with the vertex editor). After the library has placed it, the box
+   is measured and moved back by exactly what sticks out of the map. Measured on screen rather
+   than computed from the layer point: the pane it lives in is offset by every pan. */
+(function () {
+  const P = L.Draw && L.Draw.Tooltip && L.Draw.Tooltip.prototype;
+  if (!P || P._nvClamped) return;
+  P._nvClamped = true;
+  const place = P.updatePosition;
+  P.updatePosition = function (latlng) {
+    place.call(this, latlng);
+    const el = this._container;
+    if (!el) return this;
+    try {
+      // The map runs under the two bars (they overlay it), so the room is what lies between them.
+      const m = this._map.getContainer().getBoundingClientRect(), r = el.getBoundingClientRect(), pad = 8;
+      const tb = document.getElementById('topbar'), sb = document.getElementById('statusbar');
+      const top = Math.max(m.top, tb ? tb.getBoundingClientRect().bottom : m.top);
+      const bottom = Math.min(m.bottom, sb ? sb.getBoundingClientRect().top : m.bottom);
+      let dx = Math.min(0, m.right - pad - r.right), dy = Math.min(0, bottom - pad - r.bottom);
+      if (r.left + dx < m.left + pad) dx = m.left + pad - r.left;
+      if (r.top + dy < top + pad) dy = top + pad - r.top;
+      const moved = Math.abs(dx) >= 1 || Math.abs(dy) >= 1;
+      if (moved) L.DomUtil.setPosition(el, L.DomUtil.getPosition(el).add([Math.round(dx), Math.round(dy)]));
+      el.classList.toggle('tip-shifted', moved);
+    } catch (_) {}
+    return this;
+  };
+})();
+
 map.addControl(new L.Control.Draw({
   position: 'topleft',
   edit: { featureGroup: drawnItems, remove: false, poly: { allowIntersection: true } },
@@ -1212,10 +1243,54 @@ map.on('contextmenu', e => {
      The 10 px is the same gap --lane-bottom already puts between stacked things, not a new
      measurement. The literal in the CSS stays as the fallback for a browser without
      ResizeObserver, and for the case where this block throws. */
+  /* The nav HUD sits in the same bottom-left lane and gets the same treatment: the lane is the
+     taller of the two panels that are on screen AND still in their stylesheet place. A panel
+     dragged elsewhere (.panel-moved, see makePanelDraggable) no longer reserves the lane. */
+  const _laneHosts = [panel, document.getElementById('nav-hud')].filter(Boolean);
+  /* Where the centre column goes while that panel is in its place. Rule: take the free space
+     without covering anything and without being covered — first sideways, then upwards.
+     Measured from the boxes the browser laid out, never from a width threshold: the Select badge
+     changes width with the layer name and the count.
+     - The column does not meet the panel across the screen: nothing moves.
+     - It meets it, and there is room on the right before the bottom-right buttons (landscape):
+       --centre-shift moves the whole column right, just clear of the panel. Lifting there would
+       push the Select badge under the top bar: the screen is 369 px tall on the bench.
+     - No room sideways (portrait phones): --badge-lift raises the column above the panel.
+     Positions are read back without the current shift, so the answer does not feed itself. */
+  const _centreBadges = ['sel-badge', 'nav-follow-badge', 'kml-edit-bar', 'wfs-target-picker']
+    .map(id => document.getElementById(id)).filter(Boolean);
+  const _cssPx = n => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(n)) || 0;
+  const _rightLimit = () => {
+    let x = window.innerWidth;
+    // The buttons only: the attribution lives in the copyright band below the lanes.
+    document.querySelectorAll('.leaflet-control-container .leaflet-bottom.leaflet-right .leaflet-control:not(.leaflet-control-attribution)').forEach(c => {
+      const r = c.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) x = Math.min(x, r.left);
+    });
+    return x;
+  };
   const _setHudLane = () => {
     try {
-      const h = panel.offsetHeight;
-      if (h > 0) document.documentElement.style.setProperty('--hud-lane', (h + 10) + 'px');
+      const root = document.documentElement.style;
+      const inPlace = _laneHosts.filter(p => !p.classList.contains('hidden') && !p.classList.contains('panel-moved'));
+      let h = 0;
+      inPlace.forEach(p => { h = Math.max(h, p.offsetHeight); });
+      if (h > 0) root.setProperty('--hud-lane', (h + 10) + 'px');
+      let shift = 0, lift = false;
+      const shown = _centreBadges.filter(b => !b.classList.contains('hidden') && b.offsetWidth > 0);
+      if (inPlace.length && shown.length) {
+        const s0 = _cssPx('--centre-shift');
+        const pl = Math.min(...inPlace.map(p => p.getBoundingClientRect().left));
+        const pr = Math.max(...inPlace.map(p => p.getBoundingClientRect().right));
+        const boxes = shown.map(b => { const r = b.getBoundingClientRect(); return { l: r.left - s0, r: r.right - s0 }; });
+        if (boxes.some(x => x.l < pr + 8 && x.r > pl - 8)) {
+          const need = Math.ceil(Math.max(...boxes.map(x => pr + 8 - x.l)));
+          if (Math.max(...boxes.map(x => x.r + need)) <= _rightLimit() - 8) shift = need;
+          else lift = true;
+        }
+      }
+      root.setProperty('--centre-shift', shift + 'px');
+      root.setProperty('--badge-lift', lift ? 'var(--hud-lane)' : '0px');
     } catch (_) {}
   };
   /* Two observers, because the height changes for two different reasons and each misses the
@@ -1231,12 +1306,15 @@ map.on('contextmenu', e => {
      already-visible element fired normally. */
   let _hudRO = null, _hudMO = null;
   if (window.ResizeObserver) {
-    try { _hudRO = new ResizeObserver(_setHudLane); _hudRO.observe(panel); } catch (_) {}
+    try { _hudRO = new ResizeObserver(_setHudLane); _laneHosts.concat(_centreBadges).forEach(p => _hudRO.observe(p)); } catch (_) {}
   }
   if (window.MutationObserver) {
     try { _hudMO = new MutationObserver(_setHudLane);
-          _hudMO.observe(panel, { attributes: true, attributeFilter: ['class'] }); } catch (_) {}
+          _laneHosts.concat(_centreBadges).forEach(p => _hudMO.observe(p, { attributes: true, attributeFilter: ['class'] })); } catch (_) {}
   }
+  // The badges' horizontal place also moves with the window and with the sidebar (a transition).
+  window.addEventListener('resize', _setHudLane);
+  _centreBadges.forEach(b => b.addEventListener('transitionend', _setHudLane));
   _setHudLane();
 
   const _fpCol = document.getElementById('flight-collapse');
@@ -1246,30 +1324,7 @@ map.on('contextmenu', e => {
     _setHudLane();   // collapsing removes the grid; the lane must follow it down
   });
 
-  let dragging = false, startX, startY, origLeft, origTop;
-  function _onStart(cx, cy) {
-    dragging = true; startX = cx; startY = cy;
-    panel.style.zIndex = ++window._panelZTop;
-    if (!panel.style.left || panel.style.bottom) {
-      const r = panel.getBoundingClientRect();
-      panel.style.bottom = 'auto'; panel.style.right = 'auto';
-      panel.style.left = r.left + 'px'; panel.style.top = r.top + 'px';
-    }
-    origLeft = parseFloat(panel.style.left); origTop = parseFloat(panel.style.top);
-  }
-  function _onMove(cx, cy) {
-    if (!dragging) return;
-    panel.style.left = Math.max(0, Math.min(window.innerWidth  - panel.offsetWidth,  origLeft + cx - startX)) + 'px';
-    panel.style.top  = Math.max(0, Math.min(window.innerHeight - panel.offsetHeight, origTop  + cy - startY)) + 'px';
-  }
-  function _onEnd() { dragging = false; }
-
-  grip.addEventListener('mousedown',  e => { _onStart(e.clientX, e.clientY); e.preventDefault(); });
-  grip.addEventListener('touchstart', e => { _onStart(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }, { passive: false });
-  document.addEventListener('mousemove',  e => _onMove(e.clientX, e.clientY));
-  document.addEventListener('touchmove',  e => { if (dragging) { _onMove(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); } }, { passive: false });
-  document.addEventListener('mouseup',  _onEnd);
-  document.addEventListener('touchend', _onEnd);
+  makePanelDraggable(panel, grip);
 })();
 
 /* ===== BASEMAP SWITCHER ===== */

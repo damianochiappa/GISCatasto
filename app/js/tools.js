@@ -45,37 +45,8 @@ document.getElementById('map-tools-close').addEventListener('click', () => {
   document.getElementById('map-tools').classList.add('hidden');
 });
 
-/* Map-tools drag */
-(function () {
-  const panel  = document.getElementById('map-tools');
-  const header = panel.querySelector('.mt-header');
-  let dragging = false, startX, startY, origLeft, origTop;
-
-  function _onStart(cx, cy) {
-    dragging = true; startX = cx; startY = cy;
-    panel.style.zIndex = ++window._panelZTop;
-    if (!panel.style.left) {
-      const r = panel.getBoundingClientRect();
-      panel.style.bottom = 'auto'; panel.style.right = 'auto';
-      panel.style.left = r.left + 'px'; panel.style.top = r.top + 'px';
-    }
-    origLeft = parseFloat(panel.style.left); origTop = parseFloat(panel.style.top);
-  }
-  function _onMove(cx, cy) {
-    if (!dragging) return;
-    const mw = window.innerWidth, mh = window.innerHeight;
-    panel.style.left = Math.max(0, Math.min(mw - panel.offsetWidth,  origLeft + cx - startX)) + 'px';
-    panel.style.top  = Math.max(0, Math.min(mh - panel.offsetHeight, origTop  + cy - startY)) + 'px';
-  }
-  function _onEnd() { dragging = false; }
-
-  header.addEventListener('mousedown',  e => { if (e.target.closest('button')) return; _onStart(e.clientX, e.clientY); e.preventDefault(); });
-  header.addEventListener('touchstart', e => { if (e.target.closest('button')) return; e.preventDefault(); _onStart(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
-  document.addEventListener('mousemove',  e => _onMove(e.clientX, e.clientY));
-  document.addEventListener('touchmove',  e => { if (dragging) { _onMove(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); } }, { passive: false });
-  document.addEventListener('mouseup',  _onEnd);
-  document.addEventListener('touchend', _onEnd);
-})();
+/* Map-tools drag: the grip is the handle; the tabs and the close button are controls. */
+makePanelDraggable(document.getElementById('map-tools'), document.querySelector('#map-tools .mt-header'));
 
 /* ===== GO TO COORDINATES ===== */
 document.getElementById('btn-goto').addEventListener('click', gotoCoord);
