@@ -54,9 +54,15 @@
         );
       });
     }
-    return fetch(url, { signal: AbortSignal.timeout(10000) })
+    // AbortController with a timer, not AbortSignal.timeout(), which older WebViews lack.
+    const ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+    const tid = ctrl ? setTimeout(() => ctrl.abort(), 10000) : null;
+    const done = () => { if (tid) clearTimeout(tid); };
+    return fetch(url, ctrl ? { signal: ctrl.signal } : undefined)
       .then(r => { if (!r.ok) throw new Error('OSRM ' + r.status); return r.json(); })
-      .then(_pick);
+      .then(_pick)
+      .then(v => { done(); return v; },
+            e => { done(); throw (e && e.name === 'AbortError') ? new Error('il servizio dei percorsi non risponde') : e; });
   }
 
   /* Both usage policies require the licence and the routing source to be visible while the

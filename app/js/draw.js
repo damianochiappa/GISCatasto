@@ -170,7 +170,7 @@ function _openDrawPopup(layer, type) {
   saveBtn.addEventListener('click', () => {
     const json = layerToGeoJSON(layer);
     json.properties = json.properties || {};
-    json.properties.name        = nameInput.value.trim() || 'Placemark';
+    json.properties.name        = nameInput.value.trim() || 'Segnaposto';
     json.properties.description = descInput.value;
     _applySimpleStyle(json.properties, layer);
     layer._geoName = json.properties.name;
@@ -424,6 +424,12 @@ document.getElementById('btn-export-all-geojson').addEventListener('click', () =
   });
 });
 
+/* The stroke width polygons, rectangles and circles are DRAWN at (the draw control in map.js).
+   A shape rebuilt from storage or from a file was given no width, which is Leaflet's default of
+   3: it came back one pixel heavier than it was drawn — the shape changing on its own, the way
+   its colour used to. Lines are drawn at 3 and need nothing. */
+const _DRAW_AREA_WEIGHT = 2;
+
 /* ===== IMPORT GEOJSON ===== */
 document.getElementById('btn-import-geojson').addEventListener('click', () => {
   document.getElementById('import-geojson-input').value = '';
@@ -478,7 +484,7 @@ document.getElementById('import-geojson-input').addEventListener('change', funct
         layer._geoType = type || 'polyline';
       } else if (f.geometry.type === 'Polygon') {
         const rings = f.geometry.coordinates.map(ring => ring.map(c => [c[1], c[0]]));
-        layer = L.polygon(rings, { color, fillColor: color, opacity, fillOpacity: opacity * 0.3 });
+        layer = L.polygon(rings, { color, fillColor: color, weight: _DRAW_AREA_WEIGHT, opacity, fillOpacity: opacity * 0.3 });
         layer._geoType = type || 'polygon';
       } else {
         return;
@@ -496,7 +502,7 @@ document.getElementById('import-geojson-input').addEventListener('change', funct
     if (imported) {
       _saveDraws();
       updateDrawStats();
-      toastMsg('Importate ' + imported + ' shape' + (imported > 1 ? 's' : ''), 'success', undefined, 'sidebar');
+      toastMsg(imported === 1 ? 'Importata 1 forma' : 'Importate ' + imported + ' forme', 'success', undefined, 'sidebar');
     } else {
       toastMsg('Nessuna forma compatibile trovata', 'error', undefined, 'sidebar');
     }
@@ -817,7 +823,7 @@ function _loadDraws() {
         layer._geoType = 'polyline';
       } else if (f.geometry.type === 'Polygon') {
         const rings = f.geometry.coordinates.map(ring => ring.map(c => [c[1], c[0]]));
-        layer = L.polygon(rings, { color, fillColor: color, opacity, fillOpacity: opacity * 0.3 });
+        layer = L.polygon(rings, { color, fillColor: color, weight: _DRAW_AREA_WEIGHT, opacity, fillOpacity: opacity * 0.3 });
         layer._geoType = 'polygon';
       } else {
         return;

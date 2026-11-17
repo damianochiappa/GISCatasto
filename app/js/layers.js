@@ -403,7 +403,17 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
     if (opts.onHollowChange) opts.onHollowChange(nowHollow);
   });
 
+  /* While this layer is open in the vertex editor its row neither switches nor removes it. The
+     editor takes the layer off the map and puts working copies there; Save and Cancel put a
+     layer back and write it into loadedLayers. Removing the row mid-edit brought the layer back
+     with no row left to remove it by, and ticking the box drew the original under the copies. */
+  const _editingThis = () => {
+    if (!_kmlEditActive || _kmlEditActive.layerId !== id) return false;
+    toastMsg('Chiudi prima la modifica del KML (Salva o Annulla)', 'warn', undefined, 'sidebar');
+    return true;
+  };
   item.querySelector('input[type=checkbox]').addEventListener('change', e => {
+    if (_editingThis()) { e.target.checked = !e.target.checked; return; }
     const l = loadedLayers[id];
     e.target.checked ? map.addLayer(l) : map.removeLayer(l);
     if (opts.onStateChange) opts.onStateChange({ opacity: parseInt(opacitySlider.value), visible: e.target.checked });
@@ -439,6 +449,7 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
   /* Removal is not the same gesture as hiding, and the ✕ sits next to the visibility
      toggle: the warning names the cheaper alternative rather than just asking twice. */
   item.querySelector('.layer-del').addEventListener('click', () => {
+    if (_editingThis()) return;
     showConfirmModal(
       'Sei sicuro? Considera di spegnere il livello senza rimuoverlo: se lo rimuovi dovrai ' +
       'aggiungerlo di nuovo a mano in futuro.',
@@ -911,38 +922,43 @@ function _bindFeaturePopup(feature, layer) {
 /* ===== SHARED LAYER BUILDER ===== */
 /* Parses content into a Leaflet layer and adds it to the list.
    listOpts: passed directly to addLayerToList (opacity, visible, onStateChange, onDelete, noZoom, silent). */
+/* An error raised while READING the content is marked `unreadable`; one raised afterwards, by
+   the legend or the map, is not. The startup replay needs the difference: only the first kind
+   is a reason to forget a stored file. */
+function _unreadable(fn) {
+  try { return fn(); } catch (err) { try { err.unreadable = true; } catch (_) {} throw err; }
+}
+
 function _addContentLayer(content, name, mime, listOpts) {
   listOpts = listOpts || {};
   if (mime.includes('kml')) {
-    const parser = new DOMParser();
-    const kmlDoc = parser.parseFromString(content, 'text/xml');
-    const parseErr = kmlDoc.querySelector('parsererror');
-    if (parseErr) throw new Error('KML non valido: ' + parseErr.textContent.substring(0, 80));
-    const layer = new L.KML(kmlDoc);
+    const { kmlDoc, layer } = _unreadable(() => {
+      const doc = new DOMParser().parseFromString(content, 'text/xml');
+      const parseErr = doc.querySelector('parsererror');
+      if (parseErr) throw new Error('KML non valido: ' + parseErr.textContent.substring(0, 80));
+      return { kmlDoc: doc, layer: new L.KML(doc) };
+    });
     if ((layer.getLayers ? layer.getLayers().length : -1) === 0)
       toastMsg('KML caricato ma vuoto o senza geometrie: ' + name, '', undefined, 'sidebar');
     const propsArray = _extractPlacemarkProps(kmlDoc);
     enhanceKMLLayer(layer, propsArray, kmlDoc);
     addLayerToList(layer, name, content, mime, { ...listOpts, isKml: true });
   } else if (mime.includes('json')) {
-    const geoData = JSON.parse(content);
-    const layer = L.geoJSON(geoData, {
+    const layer = _unreadable(() => L.geoJSON(JSON.parse(content), {
       style: { color: '#4f8ef7', weight: 2, fillOpacity: 0.3 },
       pointToLayer: (f, ll) => L.circleMarker(ll, { radius: 6, color: '#4f8ef7' }),
       onEachFeature: (f, l) => _bindFeaturePopup(f, l)
-    });
+    }));
     addLayerToList(layer, name, content, mime, listOpts);
   } else if (mime.includes('gpx')) {
-    const gpxDoc = new DOMParser().parseFromString(content, 'text/xml');
-    const geoData = toGeoJSON.gpx(gpxDoc);
-    const layer = L.geoJSON(geoData, {
+    const layer = _unreadable(() => L.geoJSON(toGeoJSON.gpx(new DOMParser().parseFromString(content, 'text/xml')), {
       style: { color: '#f0a830', weight: 3 },
       pointToLayer: (f, ll) => L.circleMarker(ll, { radius: 5, color: '#f0a830' }),
       onEachFeature: (f, l) => _bindFeaturePopup(f, l)
-    });
+    }));
     addLayerToList(layer, name, content, mime, listOpts);
   } else {
-    throw new Error('Unsupported MIME: ' + mime);
+    _unreadable(() => { throw new Error('Unsupported MIME: ' + mime); });
   }
 }
 
@@ -996,7 +1012,12 @@ function _replayOverlays(list, contents) {
         _idbPut(e.id, e.content).then(okIdb => { if (okIdb) _updateOverlay(e.id, { content: null }); });
       }
     } catch(err) {
-      _removeOverlay(e.id);   // unparseable file: genuinely unusable, drop it
+      /* Only a file that cannot be READ is forgotten. This used to drop the stored entry on any
+         exception at all, so a fault downstream of the parse — the legend, a pane — would have
+         cost the user the file they had imported, silently, at the next start. Kept, it gets
+         another chance at the next launch, like an entry whose content did not load. */
+      if (err && err.unreadable) _removeOverlay(e.id);
+      else console.warn('[giscatasto] overlay not restored, kept in the store:', e.name, '(' + e.id + ')', err);
     }
   });
   if (migrated) console.info('[giscatasto] migrated ' + migrated + ' overlay(s) from localStorage to IndexedDB');
@@ -1910,14 +1931,10 @@ function _proceedDissolve() {
         if (ok) { ok.disabled = false; ok.className = 'btn btn-success'; }
         toastMsg('Dissolvenza non riuscita nemmeno dopo la semplificazione', 'error', undefined, 'sidebar'); return;
       }
-      try {
-        const coords = result.geometry.coordinates;
-        if (result.geometry.type === 'Polygon' && coords.length > 1) {
-          result = turf.polygon([coords[0]], result.properties);
-        } else if (result.geometry.type === 'MultiPolygon') {
-          result = turf.multiPolygon(coords.map(rings => [rings[0]]), result.properties);
-        }
-      } catch(_) {}
+      /* The holes of the result are kept. They used to be thrown away here, each polygon rebuilt
+         from its outer boundary alone: parcels merged around one that was not selected came out
+         as a filled shape, with the enclosed parcel inside it and inside the area written to the
+         file. A hole is part of the geometry the user asked for. */
 
       if (fill) fill.style.width = '100%';
       if (txt)  txt.textContent = 'Fatto';
@@ -1930,7 +1947,7 @@ function _proceedDissolve() {
           document.getElementById('dissolve-desc-input').value = '';
           modal.classList.remove('hidden');
           document.getElementById('dissolve-modal-ok').onclick = () => {
-            const rawName = (document.getElementById('dissolve-name-input').value || '').trim() || 'Dissolved';
+            const rawName = (document.getElementById('dissolve-name-input').value || '').trim() || 'Dissolvenza';
             const name = rawName.replace(/\.kml$/i, '');
             const desc = (document.getElementById('dissolve-desc-input').value || '').trim();
             modal.classList.add('hidden');

@@ -52,6 +52,24 @@ makePanelDraggable(document.getElementById('map-tools'), document.querySelector(
 document.getElementById('btn-goto').addEventListener('click', gotoCoord);
 document.getElementById('goto-input').addEventListener('keydown', e => { if (e.key === 'Enter') gotoCoord(); });
 
+/* Two numbers typed as decimal degrees. A comma is a decimal mark in Italian and a separator
+   everywhere else, so it is read as a decimal only where it cannot be a separator: both numbers
+   may carry one when they are separated by a space or a semicolon, and "43,78, 11,22" — commas
+   inside, comma AND space between — is unambiguous too. Anything else is split on spaces, commas
+   and semicolons exactly as it always was: "43.78,11.22" and "43, 11" keep their meaning.
+   It used to be that split alone, which read "43,7809 11,2226" as latitude 43, longitude 7809. */
+function _parseDD(val) {
+  const num = '[+-]?\\d+(?:[.,]\\d+)?';
+  const m = val.match(new RegExp('^\\s*(' + num + ')(?:\\s*;\\s*|\\s+)(' + num + ')\\s*$')) ||
+            val.match(/^\s*([+-]?\d+,\d+)\s*,\s+([+-]?\d+,\d+)\s*$/);
+  if (m) return { lat: parseFloat(m[1].replace(',', '.')), lon: parseFloat(m[2].replace(',', '.')) };
+  const p = val.split(/[\s,;]+/);
+  return { lat: parseFloat(p[0]), lon: parseFloat(p[1]) };
+}
+/* A pair of numbers is a position only inside these limits. Nothing checked them: a latitude of
+   95, or the 7809 above, was accepted and the map flew there. */
+function _inWorld(lat, lon) { return Math.abs(lat) <= 90 && Math.abs(lon) <= 180; }
+
 let gotoMarker = null;
 function gotoCoord() {
   const val = document.getElementById('goto-input').value.trim();
@@ -70,8 +88,8 @@ function gotoCoord() {
     if (m) { lat = dms2dd(m[1]); lon = dms2dd(m[2]); }
   }
   if (isNaN(lat) || isNaN(lon)) {
-    const p = val.split(/[\s,;]+/);
-    lat = parseFloat(p[0]); lon = parseFloat(p[1]);
+    const dd = _parseDD(val);
+    lat = dd.lat; lon = dd.lon;
   }
   if (isNaN(lat) || isNaN(lon)) {
     // Not a coordinate: if it reads like a place name, hand it to the address search
@@ -79,6 +97,9 @@ function gotoCoord() {
     const gi = document.getElementById('goto-input');
     if (/[a-zA-Z]/.test(val) && typeof gi._nvSearch === 'function') { gi._nvSearch(); return; }
     toastMsg('Formato non riconosciuto (DD, DMS, MGRS, UTM)', 'error', undefined, 'sidebar'); return;
+  }
+  if (!_inWorld(lat, lon)) {
+    toastMsg('Coordinate fuori dai limiti: latitudine fra −90 e 90, longitudine fra −180 e 180', 'error', undefined, 'sidebar'); return;
   }
   if (gotoMarker) map.removeLayer(gotoMarker);
   map.flyTo([lat, lon], 14);
@@ -118,8 +139,8 @@ function convertCoord() {
   let lat = NaN, lon = NaN;
   try {
     if (fromFmt === 'dd') {
-      const p = val.split(/[\s,;]+/);
-      lat = parseFloat(p[0]); lon = parseFloat(p[1]);
+      const dd = _parseDD(val);
+      lat = dd.lat; lon = dd.lon;
     } else if (fromFmt === 'dms') {
       const m = val.match(/(\d+[\u00b0\s]\d+['\s]\d+(?:\.\d+)?["''\s]*[NnSs])\s*[,\s]\s*(\d+[\u00b0\s]\d+['\s]\d+(?:\.\d+)?["''\s]*[EeWw])/);
       if (m) { lat = dms2dd(m[1]); lon = dms2dd(m[2]); }
@@ -141,7 +162,7 @@ function convertCoord() {
         lat = ll.lat; lon = ll.lng;
       }
     }
-    if (isNaN(lat) || isNaN(lon)) throw new Error('Parse error');
+    if (isNaN(lat) || isNaN(lon) || !_inWorld(lat, lon)) throw new Error('Parse error');
 
     let utmStr = '--';
     try { const utm = UTM.fromLatLng({ lat, lng: lon }); utmStr = `${utm.zone} ${Math.round(utm.x)} ${Math.round(utm.y)}`; } catch(e) {}
@@ -629,7 +650,7 @@ function _saveBookmarks() {
 }
 
 function addBookmark(name, lat, lon, zoom) {
-  const bm = { id: Date.now(), name: (name || '').trim() || 'Bookmark', lat, lon, zoom: zoom || 14 };
+  const bm = { id: Date.now(), name: (name || '').trim() || 'Segnalibro', lat, lon, zoom: zoom || 14 };
   bookmarks.unshift(bm);
   _saveBookmarks();
   _renderBookmarks();

@@ -29,8 +29,12 @@
 
     const url = `https://api.open-meteo.com/v1/elevation?latitude=${lat.toFixed(5)}&longitude=${lon.toFixed(5)}`;
 
+    // AbortController with a timer, not AbortSignal.timeout(): that one is missing on older
+    // WebViews, where the throw landed in the catch below and every lookup read "no elevation".
+    const ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+    const tid = ctrl ? setTimeout(() => ctrl.abort(), 8000) : null;
     try {
-      const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      const r = await fetch(url, ctrl ? { signal: ctrl.signal } : undefined);
       if (!r.ok) return null;
       const j = await r.json();
       const elev = j?.elevation?.[0];
@@ -42,6 +46,7 @@
       _cache.set(key, val);
       return val;
     } catch(_) { return null; }
+    finally { if (tid) clearTimeout(tid); }
   };
 
 })();

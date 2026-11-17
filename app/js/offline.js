@@ -563,7 +563,7 @@
 
     if (!startBtn) return;
 
-    let _kmlText = null;
+    let _kmlText = null, _pickSeq = 0;
 
     if (kmlInput) {
       kmlInput.addEventListener('change', function () {
@@ -574,8 +574,34 @@
           this.value = ''; return;
         }
         if (kmlName) kmlName.textContent = f.name;
+        /* The area in force is the file just picked, or none: a file that fails to read must not
+           leave the previous one's area behind under the new name. */
+        _kmlText = null;
+        // Two files picked in a row: the slower read (a KMZ is unzipped) must not land over the newer one.
+        const pick = ++_pickSeq;
         const reader = new FileReader();
-        reader.onload = e => { _kmlText = e.target.result; };
+        if (ext === 'kmz') {
+          /* A KMZ is a zip holding the KML. It used to be read as text like a KML, so no
+             coordinate was ever found in it and every KMZ ended in "KML non valido" — while the
+             picker accepted the extension and its own message asked for "a .kml or .kmz file".
+             Opened the way the layer loader opens one: doc.kml if present, else the first KML. */
+          const _bad = () => {
+            if (pick !== _pickSeq) return;
+            if (kmlName) kmlName.textContent = '';
+            toastMsg('Nessun KML leggibile dentro il KMZ: ' + f.name, 'error', undefined, 'sidebar');
+          };
+          reader.onerror = _bad;
+          reader.onload = e => {
+            JSZip.loadAsync(e.target.result).then(zip => {
+              const kmls = zip.file(/\.kml$/i);
+              if (!kmls.length) throw new Error('no kml');
+              return (kmls.find(k => k.name.toLowerCase() === 'doc.kml') || kmls[0]).async('string');
+            }).then(text => { if (pick === _pickSeq) _kmlText = text; }).catch(_bad);
+          };
+          reader.readAsArrayBuffer(f);
+          return;
+        }
+        reader.onload = e => { if (pick === _pickSeq) _kmlText = e.target.result; };
         reader.readAsText(f);
       });
     }
@@ -636,7 +662,7 @@
     _populateSelect();
 
     startBtn.addEventListener('click', async () => {
-      if (!_kmlText) { toastMsg('Scegli un file KML per l’area', 'error', undefined, 'sidebar'); return; }
+      if (!_kmlText) { toastMsg('Scegli un file KML o KMZ per l’area', 'error', undefined, 'sidebar'); return; }
       const zoom = parseInt(zoomInput ? zoomInput.value : '14');
       if (isNaN(zoom) || zoom < 1 || zoom > 18) { toastMsg('Lo zoom deve stare fra 1 e 18', 'error', undefined, 'sidebar'); return; }
       if (!mapSelect || !mapSelect.value) { toastMsg('Scegli una mappa', 'error', undefined, 'sidebar'); return; }
@@ -687,13 +713,13 @@
           _notifySW();
 
           if (!deletedAny) { toastMsg('Non c’è niente da svuotare', '', undefined, 'sidebar'); return; }
-          let msg = 'Cache cleared';
+          let msg = 'Cache svuotata';
           if (est) {
             const after = (await navigator.storage.estimate()).usage || 0;
             const freed = Math.max(0, before - after);
             if (freed > 0) {
               const mb = freed / (1024 * 1024);
-              msg += ': ' + (mb >= 1024 ? (mb / 1024).toFixed(2) + ' GB' : mb.toFixed(0) + ' MB') + ' freed';
+              msg += ': ' + (mb >= 1024 ? (mb / 1024).toFixed(2) + ' GB' : mb.toFixed(0) + ' MB') + ' liberati';
             }
           }
           toastMsg(msg, 'success', undefined, 'sidebar');

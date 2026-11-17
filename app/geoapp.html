@@ -546,10 +546,10 @@
           <div class="card-body">
             <p class="hint">I tile che guardi sulla mappa vengono messi in cache da soli. Quando la cache arriva al limite di 4 GB l’app chiede prima di liberare spazio: non viene cancellato niente senza il tuo consenso. Per creare una basemap offline scegli l’area con un KML, lo zoom massimo e la mappa, poi tocca il pulsante: i tile mancanti vengono scaricati e la basemap resta disponibile senza rete.</p>
             <div class="field">
-              <label>Estensione dell’area (file KML)</label>
+              <label>Estensione dell’area (file KML o KMZ)</label>
               <label class="btn btn-secondary btn-full" style="cursor:pointer;padding:8px 12px">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                Scegli il KML dell’area
+                Scegli il file dell’area
                 <!-- accept="*/*": see #file-input; extension is validated in the change handler. -->
                 <input type="file" id="offline-kml-input" accept="*/*" style="display:none">
               </label>
@@ -664,7 +664,7 @@
             <div class="guide-section">
               <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Ricerca</h4>
               <div class="guide-item"><span class="guide-key">Barra in alto</span><span class="guide-desc">Scrivi un indirizzo e premi Invio: la ricerca parte alla conferma, non mentre digiti</span></div>
-              <div class="guide-item"><span class="guide-key">📍 pulsante ↗</span><span class="guide-desc">Vai a una coordinata (DD, DMS, MGRS, UTM) o converti fra i formati</span></div>
+              <div class="guide-item"><span class="guide-key">📍 pulsante ↗</span><span class="guide-desc">Vai a una coordinata (DD, DMS, MGRS, UTM) o converti fra i formati. I gradi decimali si possono scrivere anche con la virgola: <code>43,7809 11,2226</code></span></div>
             </div>
 
             <div class="guide-section">
@@ -711,7 +711,7 @@
               <div class="guide-item"><span class="guide-key">Freccia ↘</span><span class="guide-desc">Imposta la destinazione per indirizzo o toccando la mappa — auto, a piedi o bicicletta — percorso calcolato da OSRM</span></div>
               <div class="guide-item"><span class="guide-key">Orientamento della mappa</span><span class="guide-desc">Durante la navigazione la mappa ruota per seguire la tua direzione di marcia letta dal GPS: succede anche con la rotazione bloccata a nord, e la bussola ↘ si accende in ambra per segnalarlo. Se ti fermi, la mappa tiene l’ultimo orientamento invece di girare a vuoto. Terminata la navigazione torna a nord, a meno che tu non abbia acceso la rotazione libera dalla bussola.</span></div>
               <div class="guide-item"><span class="guide-key">Cono visivo</span><span class="guide-desc">A piedi, mentre ti muovi, viene disegnato un settore di 70° e 45 m lungo la direzione di marcia; quando ti fermi sparisce, perché una direzione non c’è più</span></div>
-              <div class="guide-item"><span class="guide-key">Cruscotto di navigazione</span><span class="guide-desc">Un pannellino in basso a sinistra mostra in tempo reale velocità, distanza dalla destinazione e orario di arrivo. Si sposta dalla maniglia ⋮⋮ e sparisce da solo a navigazione finita</span></div>
+              <div class="guide-item"><span class="guide-key">Cruscotto di navigazione</span><span class="guide-desc">Un pannellino in basso a sinistra mostra in tempo reale velocità, distanza dalla destinazione e minuti che mancano all’arrivo. Si sposta dalla maniglia ⋮⋮ e sparisce da solo a navigazione finita</span></div>
               <div class="guide-item"><span class="guide-key">Fuori percorso</span><span class="guide-desc">Ricalcola da solo il percorso se ti allontani di oltre 50 m</span></div>
               <div class="guide-item"><span class="guide-key">Esporta percorso</span><span class="guide-desc">A percorso disegnato, esportalo in KML (finisce nella cartella Download e funziona offline) oppure salvalo come disegno: una linea cliccabile che resta sopra il catasto anche dopo che hai chiuso la navigazione. La geometria del percorso deriva dai dati OpenStreetMap (ODbL).</span></div>
               <div class="guide-item"><span class="guide-key">Reset</span><span class="guide-desc">Cancella destinazione e percorso — pronta per una navigazione nuova</span></div>
@@ -736,7 +736,7 @@
               <div class="guide-item"><span class="guide-key">Cache lenta</span><span class="guide-desc">Una cache grande rallenta la ricerca dei tile molto prima di arrivare a 4 GB, quindi la stessa richiesta compare anche quando le letture si fanno lente — misurate rispetto a quanto era veloce questo dispositivo quando la cache era piccola, non rispetto a una soglia fissa. Il punto in cui compare cambia perciò da dispositivo a dispositivo</span></div>
               <div class="guide-item"><span class="guide-key">Mappe offline al limite</span><span class="guide-desc">Se le mappe offline salvate arrivano a 3,5 GB, la richiesta propone invece di sfoltire i tile più vecchi fino a 2,5 GB (circa 1 GB liberato; le mappe restano in elenco, con dei buchi). Se te lo chiede spesso, rimuovi un’intera mappa con la sua ✕</span></div>
               <div class="guide-item"><span class="guide-key">Installazione precedente</span><span class="guide-desc">Le mappe offline salvate da una versione precedente usano un formato vecchio; arrivati a 4 GB l’app propone una pulizia una tantum (poi vanno riscaricate) per tenere veloce l’archivio. Rimandando resta più lenta e la richiesta torna al lancio successivo</span></div>
-              <div class="guide-item"><span class="guide-key">Scheda Cache</span><span class="guide-desc">Scegli il KML dell’area, lo zoom massimo e la mappa, poi tocca “Converti la cache in mappa”: l’app controlla la cache, scarica tutti i tile mancanti (dallo zoom 1 al massimo) e registra la basemap offline in una cache protetta tutta sua</span></div>
+              <div class="guide-item"><span class="guide-key">Scheda Cache</span><span class="guide-desc">Scegli il file KML o KMZ dell’area, lo zoom massimo e la mappa, poi tocca “Converti la cache in mappa”: l’app controlla la cache, scarica tutti i tile mancanti (dallo zoom 1 al massimo) e registra la basemap offline in una cache protetta tutta sua</span></div>
               <div class="guide-item"><span class="guide-key">Quali mappe</span><span class="guide-desc">Le basemap di serie che puoi scaricare sono l’“Ortofoto Italia 2012” e le carte tecniche regionali: i termini di chi le pubblica non pongono limiti alla copia locale. L’ortofoto è la copertura aerea nazionale del Geoportale Nazionale, 50 cm da un volo del 2012 — quindi più vecchia e meno fine delle immagini online — e viene disegnata solo dallo zoom 11 in avanti; ogni CTR ha la propria soglia di zoom, scritta nel suo nome. Le altre basemap di serie (OpenTopoMap, OpenStreetMap, Esri) funzionano solo online: i rispettivi fornitori non consentono il download massivo dei tile, e l’app lo impedisce invece di lasciare la scelta a te. Le basemap che aggiungi tu restano sempre scaricabili, nel rispetto dei loro termini. Navigare su una qualsiasi di esse riempie comunque la cache volatile, ed è quello che tiene funzionanti offline le aree guardate di recente.</span></div>
               <div class="guide-item"><span class="guide-key">Basemap offline</span><span class="guide-desc">Compare nell’elenco delle basemap e serve dalla sua cache, senza rete, gli zoom che sono stati scaricati. Se la mappa di origine si disegna solo da un certo zoom in su — le carte tecniche regionali lo fanno, e la soglia è scritta nel loro nome — il download parte da lì: sotto quella soglia non c’era niente da scaricare. La rimuovi con la ✕, che elimina anche i tile scaricati</span></div>
               <div class="guide-item"><span class="guide-key">Interrompi</span><span class="guide-desc">Ferma il download a metà; i tile già scaricati restano in cache</span></div>
@@ -1029,7 +1029,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.5.0</span></div>
+      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.5.1</span></div>
       <div class="about-row"><span class="lbl">Autore</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">Licenza</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — software libero</a></span></div>
       <div class="about-row"><span class="lbl">Tecnologia</span><span class="val">Leaflet · Cordova · Android</span></div>

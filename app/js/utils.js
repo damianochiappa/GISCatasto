@@ -273,8 +273,14 @@ const _SAFE_TAGS = new Set(['A','ABBR','B','BIG','BLOCKQUOTE','BR','CAPTION','CE
 const _DROP_TAGS = new Set(['SCRIPT','STYLE','IFRAME','FRAME','FRAMESET','OBJECT','EMBED','APPLET',
   'LINK','META','BASE','FORM','INPUT','BUTTON','TEXTAREA','SELECT','OPTION','TEMPLATE','NOSCRIPT',
   'SVG','MATH','AUDIO','VIDEO','SOURCE','TRACK','CANVAS','PARAM','DIALOG','PORTAL']);
+/* No `color`, no `bgcolor`, and no colour or background inside `style` (see below): a KML
+   description usually brings a white background and black text, written for a white balloon and
+   unreadable on this theme. They used to be removed when a popup OPENED, from every popup — so
+   the app's own popups lost the colours the source gave them (the accent on the coordinate
+   labels, the muted section header, the two coloured buttons of the long-press menu). Foreign
+   markup enters through this function and nowhere else, so this is where its colours stop. */
 const _SAFE_ATTRS = new Set(['href','src','alt','title','width','height','colspan','rowspan','align',
-  'valign','border','cellpadding','cellspacing','style','color','bgcolor','face','size','dir','lang']);
+  'valign','border','cellpadding','cellspacing','style','face','size','dir','lang']);
 
 function nvSafeHtml(html) {
   if (html == null) return '';
@@ -308,8 +314,11 @@ function nvSafeHtml(html) {
                 // Photos embedded in a description as base64 — raster types only, never SVG.
                 (name === 'src' && /^data:image\/(png|jpe?g|gif|webp);/.test(v));
               if (!okUrl) n.removeAttribute(a.name);
-            } else if (name === 'style' && /expression|javascript:|url\s*\(/i.test(a.value)) {
-              n.removeAttribute(a.name);
+            } else if (name === 'style') {
+              if (/expression|javascript:|url\s*\(/i.test(a.value)) { n.removeAttribute(a.name); return; }
+              // The same two patterns the popup filter used, so a file reads exactly as before.
+              const st = a.value.replace(/background(-color)?:[^;]+;?/gi, '').replace(/\bcolor:[^;]+;?/gi, '').trim();
+              if (st) n.setAttribute(a.name, st); else n.removeAttribute(a.name);
             }
           });
           if (hadIs) {
@@ -999,7 +1008,7 @@ function showSavePathModal(path) {
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Percorso:</div>
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;
                   padding:10px;font-size:12px;word-break:break-all;color:var(--text);
-                  font-family:monospace;margin-bottom:14px">${path}</div>
+                  font-family:monospace;margin-bottom:14px">${_xmlEsc(path)}</div>
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">
         Apri <b>Files</b> di Google (o un altro gestore di file)&nbsp;&rarr;<br>
         <span style="color:var(--accent)">Sfoglia &rarr; Android &rarr; data &rarr; com.geotool.giscatasto &rarr; files</span>
@@ -1057,7 +1066,7 @@ function downloadFile(content, filename, mime) {
       () => toastMsg('Salvato in Download: ' + filename, 'success'),
       err  => {
         console.warn('SaveToDownloads error:', err);
-        toastMsg('Salvataggio in Download non riuscito (' + (err || 'unknown') + ') — saving locally', 'warn');
+        toastMsg('Salvataggio in Download non riuscito (' + (err || 'errore sconosciuto') + '): salvo nella cartella dell’app', 'warn');
         _doSaveFile(blob, filename);
       }
     );

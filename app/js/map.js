@@ -652,7 +652,7 @@ const GpsControl = L.Control.extend({
   onAdd() {
     const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-gps');
     const a = L.DomUtil.create('a', '', div);
-    a.href = '#'; a.title = 'GPS location';
+    a.href = '#'; a.title = 'Posizione GPS';
     a.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>';
     L.DomEvent.disableClickPropagation(div);
     L.DomEvent.on(a, 'click', e => { L.DomEvent.preventDefault(e); toggleGPS(a); });
@@ -996,7 +996,10 @@ function toggleGPS(btn) {
     if (gpsCircle) { map.removeLayer(gpsCircle); gpsCircle = null; }
     const _fp = document.getElementById('flight-panel');
     if (_fp) _fp.classList.add('hidden');
-    _gpsWasFlying = false;
+    /* Flight is confirmed fix by fix and belongs to this GPS session. The state used to outlive
+       it: switched off in flight, the next session opened the panel on its first fix, on the
+       ground. The streak goes too, so the next session needs its own two fixes. */
+    _gpsWasFlying = false; _flightState = false; _flightStreak = 0;
     const accItem = document.getElementById('sb-acc-item');
     if (accItem) accItem.style.display = 'none';
     const brgItem = document.getElementById('sb-brg-item');
@@ -1006,19 +1009,9 @@ function toggleGPS(btn) {
   }
 }
 
-/* ===== KML POPUP SANITIZE ===== */
-map.on('popupopen', e => {
-  const el = e.popup.getElement();
-  if (!el) return;
-  el.querySelectorAll('[bgcolor]').forEach(n => n.removeAttribute('bgcolor'));
-  el.querySelectorAll('[background]').forEach(n => n.removeAttribute('background'));
-  el.querySelectorAll('[color]').forEach(n => n.removeAttribute('color'));
-  el.querySelectorAll('[style]').forEach(n => {
-    let s = n.getAttribute('style') || '';
-    s = s.replace(/background(-color)?:[^;]+;?/gi, '').replace(/\bcolor:[^;]+;?/gi, '');
-    n.setAttribute('style', s);
-  });
-});
+/* The colours a KML description brings are removed in nvSafeHtml (utils.js), where the file's
+   markup enters. There used to be a filter here on 'popupopen' that did it for EVERY popup and
+   so stripped the app's own colours as well. */
 
 /* ===== MAP TOOLS BUTTON ===== */
 const MapToolsControl = L.Control.extend({
@@ -1026,7 +1019,7 @@ const MapToolsControl = L.Control.extend({
   onAdd() {
     const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-tools');
     const a = L.DomUtil.create('a', '', div);
-    a.href = '#'; a.title = 'Coordinate tools';
+    a.href = '#'; a.title = 'Strumenti per le coordinate';
     a.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 1 8 8c0 5.25-8 14-8 14S4 15.25 4 10a8 8 0 0 1 8-8z"/></svg>';
     L.DomEvent.disableClickPropagation(div);
     L.DomEvent.on(a, 'click', e => {
@@ -1154,7 +1147,7 @@ map.on('contextmenu', e => {
     `<div><b style="color:var(--accent)">DMS&nbsp;&nbsp;</b>${dms}</div>` +
     `<div><b style="color:var(--accent)">UTM&nbsp;&nbsp;</b>${utm}</div>` +
     `<div><b style="color:var(--accent)">MGRS&nbsp;</b>${mgrs}</div>` +
-    `<div><b style="color:var(--accent)">ELEV&nbsp;&nbsp;</b><span class="ctx-elev">fetching&hellip;</span></div>`;
+    `<div><b style="color:var(--accent)">ELEV&nbsp;&nbsp;</b><span class="ctx-elev">ricerca&hellip;</span></div>`;
 
   // Async elevation fetch for contextmenu
   if (typeof fetchElevation === 'function') {
@@ -3435,6 +3428,11 @@ const _WFSLayer = L.Layer.extend({
     const map = this._map;
     if (!map) { _done(); return; }
     if (map.getZoom() < this.options.minZoom) {
+      /* Invalidate whatever is in flight, as the WMS layer does at this same point: without it a
+         reply asked for above the scale and landing after a quick zoom out passed the generation
+         check and was drawn here, below it, until the next pan. The stale reply still releases
+         the parse queue — _parseTimed and _render both do on a generation mismatch. */
+      this._reqId++;
       if (this._geo) { try { map.removeLayer(this._geo); } catch(_) {} this._geo = null; }
       const now = Date.now();
       if (!this._lastZoomWarn || now - this._lastZoomWarn > 5000) {
@@ -3598,6 +3596,30 @@ const _WFSLayer = L.Layer.extend({
             _reportWfsEmpty(this._name());
           }
           this._lastEmptyWarn = _now;
+        }
+        /* With a FILTER active, an empty answer is the answer to the filter, and what was drawn
+           before it goes. It used to stay — this branch returned without touching `_geo` — so a
+           filter matching nothing said "no geometry matches" over a map still showing every
+           unfiltered parcel. Same bookkeeping as the end of a completed build: the selection's
+           screen references into the outgoing group are dropped, the selection itself (keys,
+           labels, captured GeoJSON) is kept, so it is highlighted again when features come back.
+           ⚠ WITHOUT a filter nothing changes, deliberately. There an empty answer for a view that
+           still shows features means the server is silent, not the ground empty: below the scale
+           it publishes at (parcels exist only from z17), or for a moment under load. Keeping what
+           is drawn is what the app always did, and clearing it would blink the cadastre during
+           GPS follow, where this runs on every refresh. With a consistent server, features left
+           in place this way are off screen anyway: anything inside the requested box would have
+           been sent. */
+        if (this._geo && _hasFilter) {
+          const _gone = this._geo;
+          try {
+            const stale = [];
+            _selLayers.forEach((l, k) => { if (_gone.hasLayer(l)) stale.push(k); });
+            stale.forEach(k => _selLayers.delete(k));
+          } catch(_) {}
+          try { map.removeLayer(_gone); } catch(_) {}
+          this._geo = null;
+          _selUpdateBadge();
         }
         try { this.fire('wfsupdate', { count: 0 }); } catch(_) {}
         return;
@@ -4469,15 +4491,15 @@ function _addBasemapUI(cfg) {
     const verSel = document.getElementById('ws-version');
     const verLbl = document.getElementById('ws-ver-label');
     if (isWfs) {
-      verLbl.textContent = 'WFS version';
+      verLbl.textContent = 'Versione WFS';
       const cur = verSel.value;
       verSel.innerHTML =
-        '<option value="2.0.0">2.0.0 (recommended)</option>' +
+        '<option value="2.0.0">2.0.0 (consigliata)</option>' +
         '<option value="1.1.0">1.1.0</option>' +
         '<option value="1.0.0">1.0.0</option>';
       if (['2.0.0','1.1.0','1.0.0'].includes(cur)) verSel.value = cur;
     } else {
-      verLbl.textContent = 'WMS version';
+      verLbl.textContent = 'Versione WMS';
       const cur = verSel.value;
       verSel.innerHTML =
         '<option value="1.1.1">1.1.1</option>' +

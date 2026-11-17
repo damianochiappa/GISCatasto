@@ -31,6 +31,11 @@
   // stale async callbacks (polls, moveend handlers) from a previous Go can detect they were
   // superseded and abort.
   let _wizardGen = 0;
+  /* The completion callback of the search in progress, if any. Reset supersedes a search, and a
+     superseded search's own callbacks may arrive much later or never (a held request): Reset
+     calls this itself, so the Go button gets its label back at once instead of staying on
+     "Caricamento…". */
+  let _pendingDone = null;
   // Keys selected by this wizard, tracked separately from the global _selKeys (which can also
   // hold user-clicked selections). Cleared on next Go / Reset, never on manual deselect.
   const _wizardSelKeys = new Set();
@@ -707,9 +712,11 @@
     };
     const _done = (() => { let called = false; return () => {
       if (called) return; called = true;
+      if (_pendingDone === _done) _pendingDone = null;
       _restoreMinZoom();
       if (typeof onDone === 'function') onDone();
     }; })();
+    _pendingDone = _done;
     if (!parcelLayer) {
       // Naming the way back matters here: the layer is missing because it was deleted, and
       // until now nothing in the app told the user it could be brought back.
@@ -863,6 +870,7 @@
 
   function resetCadasterFilter() {
     _wizardGen++; // invalidate any in-flight selection poll/moveend
+    if (_pendingDone) _pendingDone();   // idempotent; also restores the parcel layer's minZoom
     clearWizardSelection();
     const parcelLayer = findLayerByTypeName(PARCEL_TYPENAME);
     if (parcelLayer && (parcelLayer.options.filterAttr || parcelLayer.options.filterVals)) {
@@ -1032,12 +1040,18 @@
     // Lazy-load regions on first activation of the Cadaster tab.
     const tabBtn = document.querySelector('[data-panel="cadaster"]');
     if (tabBtn) {
-      tabBtn.addEventListener('click', function once() {
-        tabBtn.removeEventListener('click', once);
+      /* Asked again on every opening of the tab until it has answered. The listener used to be
+         removed before the request resolved, so one failure — no signal, the ordinary condition
+         in the field — left the list empty until the app was restarted. */
+      let _regionsLoading = false;
+      tabBtn.addEventListener('click', () => {
+        if (_regions.length || _regionsLoading) return;
+        _regionsLoading = true;
         loadRegions().then(list => {
           _regions = list;
           fillSelect(regionSel, list, r => r.name, 'Scegli la regione\u2026');
-        }).catch(err => reportError(err, 'Errore nel caricamento delle regioni'));
+        }).catch(err => reportError(err, 'Errore nel caricamento delle regioni'))
+          .then(() => { _regionsLoading = false; });
       });
     }
   }
