@@ -84,7 +84,8 @@ GISCatasto includes the following open-source libraries. Their licenses are repr
 ## Map and data sources
 
 - **Agenzia delle Entrate** — cadastral mapping (INSPIRE WMS/WFS), public data under the service terms
-- **Geoportale Nazionale (PCN)** — administrative boundaries and the AGEA 2012 orthophoto, Ministry of the Environment and Energy Security, public data
+- **Geoportale Nazionale (PCN)** — administrative boundaries, Ministry of the Environment and Energy Security, public data
+- **AGEA (Agenzia per le Erogazioni in Agricoltura)** — national orthophoto 2022–2024 (WMTS), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), <https://geoportale.agea.gov.it/>
 - **OpenStreetMap** — base map, address search and routing; © OpenStreetMap contributors, ODbL
 - **OpenTopoMap** — topographic map, CC BY-SA
 - **Esri and the ArcGIS Online providers** — satellite and thematic maps, under the Esri terms

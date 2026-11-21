@@ -22,9 +22,11 @@
       from http://localhost/ and the WebView consults this policy for that origin too — with
       cleartext denied the app would not load at all. Nothing leaves the device on this origin:
       the request is answered by Cordova's asset loader, no socket is opened.
-      Why the origin is http and not https: the national orthophoto is HTTP-only (its HTTPS
-      301-redirects to HTTP, WMS path included) and Leaflet loads tiles as <img>, which an
-      https:// page refuses as mixed content. Every other host stays bound by base-config.
+      Why the origin is http and not https: it was chosen for the 2012 PCN orthophoto, which was
+      HTTP-only, and Leaflet loads tiles as <img>, which an https:// page refuses as mixed
+      content. The bundled orthophoto is AGEA's over HTTPS since 2026-11-20; the origin stays,
+      because changing it would leave every install with empty storage (see config.xml).
+      Every other host stays bound by base-config.
     -->
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">localhost</domain>

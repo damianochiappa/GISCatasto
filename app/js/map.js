@@ -7,6 +7,153 @@
    MAP — init, basemaps, GPS, coord display, contextmenu
 ===================================================== */
 
+/* ===== AGEA ORTHOPHOTO 2022–2024 =====
+   The national aerial imagery AGEA publishes as public WMTS (RNDT catalogue, CC BY 4.0, 20 cm),
+   one service per flight year. The flights are triennial and each year covers roughly a third of
+   Italy, so there is no single service that covers the country: this layer stacks the three, the
+   newest on top. Outside a year's coverage the server answers with a fully transparent PNG
+   (876 bytes) or, outside the declared extent, HTTP 400 — both harmless, but three requests per
+   tile everywhere would triple the load for nothing.
+   _AGEA_COVERAGE says which years have pixels in each z11 tile (~20 km) over Italy, as one hex
+   string per row (bit set = covered, first column in the high bit of the first digit). Measured
+   2026-11-20 against the live services, alpha channel decoded, no cell left undecided: first every
+   z9 tile of every year, then every z11 tile inside or next to a covered z9 one. Three z9 cells read
+   as covered from one stray pixel in open sea with nothing under them at z11, so they are absent.
+   Read with one cell of margin all round: at z11 a pixel is ~75 m, so a strip of coverage narrower
+   than that along a regional border could read as empty, and the margin costs only a few empty
+   876-byte tiles in a ~20 km band along the borders. Tiles above z11 look up their z11 ancestor;
+   tiles below it take every year with coverage anywhere inside them.
+   Where only one year covers a tile it is a plain <img>, exactly like any tile layer. Where
+   more than one does, the tile is a <div> holding one <img> per year, oldest first so the
+   newest paints over it. Every request is still an ordinary tile URL: the service worker
+   caches and serves each one, and the offline downloader saves all of them (getTileUrls). */
+const _AGEA_YEARS = [2024, 2023, 2022];   // newest first
+const _AGEA_TPL = y => 'https://geoportale.agea.gov.it/image/rest/services/AgEA/Ortofoto_AgEA_' + y +
+  '/ImageServer/WMTS/tile/1.0.0/AgEA_Ortofoto_AgEA_' + y + '/default/GoogleMapsCompatible/{z}/{y}/{x}';
+const _AGEA_COVERAGE = {
+  z: 11, x0: 1060, y0: 716, w: 72, h: 96,
+  years: {
+    2024: [
+      '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000',
+      '00000000b000000000', '00000700f800000000', '0018ef81f800000000', '0038ff83f000000000', '0078ff81f000000000', '007fff83f000000000',
+      '03ffff0ff000000000', '3fffffdffc00000000', '3ffffffffe00000000', '3ffffffffe00000000', '1ffffffffc00000000', '0ffffffff000000000',
+      '1fffffffe000000000', '7fffffffe000000000', '7ffffffff000000000', '3fffc3fff000000000', '3fffc0003000000000', '1fffc0000000000000',
+      '3fff80000000000000', '1ff000000000000000', '1fe000000000000000', '0fe000000000000000', '01c000000000000000', '000000000000000000',
+      '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000',
+      '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000',
+      '000000000000000000', '000000000001800000', '000000000005e00000', '00000000000fe00000', '00000000001fe00000', '00000000001fc00000',
+      '00000000001fc00000', '000000000003000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000',
+      '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000006000', '00000000000007e000',
+      '00000000000007e000', '00000000000007e000', '00000000000003f800', '00000000000003fc00', '00000000000001fc00', '00000000000001fc00',
+      '00000000000001fc00', '00000000000001fc00', '00000000000003e000', '00000000000007e000', '00000000000003e000', '00000000000007e000',
+      '0000000000000f8000', '0000000000000f8000', '0000000000000f0000', '000000000000000000', '000000000000000000', '000000000000000000',
+      '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000',
+      '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000',
+      '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000'
+    ],
+    2023: [
+      '000000000000000000', '000000000000000000', '000000000000000000', '00000001c000000000', '0000001fc000000000', '000001ffe000000000',
+      '000001fff000000000', '000001ffffc0000000', '000001ffbfe0000000', '000001ff3fc0000000', '000001ffffc0000000', '000001ffbfc0000000',
+      '000001fe3fc0000000', '000001f83fc0000000', '000001f01fe0000000', '0000007007f0000000', '000000000020000000', '000000000000000000',
+      '000000000000000000', '00007c000000000000', '0000ffff8000000000', '0000ffffe000000000', '0000ffffe000000000', '0000ffffc000000000',
+      '0000ffffe000000000', '00007fffe000000000', '000007ffe000000000', '000001fff000000000', '0000007bf800000000', '00000003f800000000',
+      '00000003f800000000', '000000006000000000', '00000000f800000000', '00000000fc00000000', '00000000fc00000000', '00000001fc00000000',
+      '00000001fc00000000', '00000003ff00000000', '00000003ff80000000', '00000007ff80000000', '0000000fff00000000', '0000000fff00000000',
+      '00000007ff80000000', '00000003ff80000000', '00000001ff80000000', '00000000ffe0000000', '000000007ff0000000', '000000003ff8000000',
+      '000000001fffc00000', '0000000007ffe00000', '0000000006ffef0000', '00000000023fff0000', '00000000061fff8000', '0000000002bffff000',
+      '000000000037fff000', '00000000000efff000', '000000000000fff000', '000000000000fff000', '0000000000007ff000', '0000000000003fc000',
+      '00000000000005c000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000',
+      '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000',
+      '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000',
+      '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000',
+      '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000',
+      '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000'
+    ],
+    2022: [
+      '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000',
+      '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000',
+      '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000',
+      '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000fc0000000000000',
+      '003ff8000000000000', '007ffe000000000000', '0079ff0c0000000000', '01f87fff0000000000', '03e01ffe0c00000000', '03e007ff3e00000000',
+      '03c003ffff00000000', '000003ffffc0000000', '000003ffffc0000000', '00000bffdfe0000000', '000001ffcfe0000000', '000019ff8fe0000000',
+      '000019ff87f0000000', '000007ff87f0000000', '000007ff03f0000000', '0000047f03f8000000', '0000047e03fc000000', '0000067c03fe000000',
+      '0000001003ff040000', '0000000007ff980000', '0000000007ffbf0000', '0000000001ff7f8000', '0000000000faff8000', '000000000000fe0000',
+      '000000000000ff0000', '0001e00000007fe000', '0033e00000003ff800', '0033f00000003ffe00', '003ff000000003ff00', '003ff000000000ffc0',
+      '003ff0000000007fe0', '003ff0000000003ff0', '001ff0000000001ff8', '001ff00000000001fc', '001ff000000000007c', '001ff000000000003c',
+      '003ff0000000000038', '001ff0000000000008', '001fe0000000000000', '001fe0000000000000', '001fe0000000000000', '003fe0000000000000',
+      '003f20000000000000', '001f10000000000000', '000000000300200000', '000000000007c00000', '000000000004c00000', '000000000000fc0000',
+      '000000000b81fc0000', '00000000bffff80000', '00000000fffff00000', '000000003ffff00000', '000000003fffe00000', '000000001fffe00000',
+      '0000000001ffe00000', '0000000000ffe00000', '00000000007ff00000', '000000000007f00000', '000000018003e00000', '000000008001e00000',
+      '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000400000000',
+      '000000000000000000', '000000001800000000', '000000000000000000', '000000000000000000', '000000000000000000', '000000000000000000'
+    ]
+  }
+};
+// year -> Set of "x,y" z11 cells, with one cell of margin in every direction (see above).
+const _AGEA_CELLS = (() => {
+  const C = _AGEA_COVERAGE, out = {};
+  _AGEA_YEARS.forEach(yr => {
+    const rows = C.years[yr], s = new Set();
+    for (let r = 0; r < C.h; r++) for (let c = 0; c < C.w; c++) {
+      if (!(parseInt(rows[r][c >> 2], 16) & (8 >> (c & 3)))) continue;
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) s.add((C.x0 + c + dc) + ',' + (C.y0 + r + dr));
+    }
+    out[yr] = s;
+  });
+  return out;
+})();
+function _ageaYearsFor(z, x, y) {
+  const Z = _AGEA_COVERAGE.z;
+  return _AGEA_YEARS.filter(yr => {
+    const s = _AGEA_CELLS[yr];
+    if (z >= Z) { const k = z - Z; return s.has((x >> k) + ',' + (y >> k)); }
+    const k = Z - z, x0 = x << k, y0 = y << k, n = 1 << k;
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) if (s.has((x0 + i) + ',' + (y0 + j))) return true;
+    return false;
+  });
+}
+const _AgeaOrthoLayer = L.TileLayer.extend({
+  initialize: function (options) {
+    L.TileLayer.prototype.initialize.call(this, _AGEA_TPL(_AGEA_YEARS[0]), options);
+    this._isAgeaOrtho = true;
+  },
+  // Every URL a tile needs, newest year first. coords.z is used as is: no zoomOffset here, and
+  // the offline downloader calls this on a layer that is not on the map.
+  getTileUrls: function (coords) {
+    return _ageaYearsFor(coords.z, coords.x, coords.y).map(yr =>
+      L.Util.template(_AGEA_TPL(yr), { z: coords.z, x: coords.x, y: coords.y }));
+  },
+  // The single-URL contract (Leaflet's own createTile, labels, generic callers): the newest year
+  // that covers the tile, or the newest year at all outside Italy.
+  getTileUrl: function (coords) {
+    const u = this.getTileUrls(coords);
+    return u.length ? u[0] : L.Util.template(this._url, { z: coords.z, x: coords.x, y: coords.y });
+  },
+  createTile: function (coords, done) {
+    const urls = this.getTileUrls(coords);
+    if (urls.length === 1) return L.TileLayer.prototype.createTile.call(this, coords, done);
+    const tile = document.createElement('div');
+    tile.setAttribute('role', 'presentation');
+    if (!urls.length) {   // outside every flight: nothing to request, but the tile must complete
+      setTimeout(() => done(null, tile), 0);
+      return tile;
+    }
+    let left = urls.length, good = 0;
+    // One year missing is normal at the edge of its coverage; only all of them failing is an error.
+    const settle = ok => { if (ok) good++; if (--left === 0) done(good ? null : new Error('tile'), tile); };
+    urls.slice().reverse().forEach(u => {
+      const img = document.createElement('img');
+      img.alt = ''; img.setAttribute('role', 'presentation');
+      img.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%';
+      img.onload  = () => settle(true);
+      img.onerror = () => { img.style.visibility = 'hidden'; settle(false); };
+      img.src = u;
+      tile.appendChild(img);
+    });
+    return tile;
+  }
+});
+
 /* ===== BASEMAP DEFINITIONS ===== */
 const BASEMAPS = {
   osm: L.tileLayer('https://tile.opentopomap.org/{z}/{x}/{y}.png', {
@@ -27,23 +174,17 @@ const BASEMAPS = {
   natgeo: L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}', {
     attribution: 'National Geographic, Esri, Garmin, HERE, UNEP-WCMC, USGS, NASA, ESA, METI, NRCAN, GEBCO, NOAA, iPC', maxZoom: 16
   }),
-  /* The only national aerial imagery that may be cached: GetCapabilities declares
-     AccessConstraints "Nessuno" and Fees "Nessuna condizione applicata", where every other
-     bundled basemap forbids bulk download. 50 cm from a 2012 flight, so it is worse than the
-     online imagery — but the comparison that matters is against having nothing available
-     offline at all.
-     Served as WMS rather than tiles, which is fine: L.TileLayer.WMS still has getTileUrl,
-     so the offline downloader treats it like any other tile source.
-     Cleartext on purpose: the host 301-redirects HTTPS to HTTP and is already the documented
-     exception in res/xml/network_security_config.xml (same host as the wizard's ADMIN_WFS).
-     Zoom window measured against the live server, not read off the scale hint: z10 and below
-     return an all-black 334-byte PNG with HTTP 200, so minZoom stops the request instead of
-     painting the map black. z18 matches the 50 cm source; 19 is upscaled client-side. */
-  pcn_ortho: L.tileLayer.wms('http://wms.pcn.minambiente.it/ogc?map=/ms_ogc/WMS_v1.3/raster/ortofoto_colore_12.map', {
-    layers: 'OI.ORTOIMMAGINI.2012.32,OI.ORTOIMMAGINI.2012.33',
-    format: 'image/png', version: '1.3.0', transparent: false,
-    minZoom: 11, maxZoom: 19, maxNativeZoom: 18,
-    attribution: 'Ortofoto AGEA 2012 &mdash; Geoportale Nazionale, Ministero dell\'Ambiente (PCN)'
+  /* The only national aerial imagery that may be cached: AGEA's WMTS services are published
+     CC BY 4.0, where every other bundled basemap forbids bulk download. See _AgeaOrthoLayer.
+     It replaced (2026-11-20) the PCN's 2012 orthophoto WMS, which had turned unreliable: its
+     MapServer intermittently lost access to the network share holding the tile index and
+     answered every GetMap with a ServiceException, for single images and tiles alike.
+     Zoom window measured against the live server: z5 upwards draws (from overviews), z19
+     answers 400, so z18 is the native top and 19 is upscaled client-side. minZoom 6 matches
+     the app's opening view of the whole country. */
+  agea_ortho: new _AgeaOrthoLayer({
+    minZoom: 6, maxZoom: 19, maxNativeZoom: 18,
+    attribution: 'Ortofoto AGEA 2022&ndash;2024 &copy; <a href="https://geoportale.agea.gov.it/">AGEA</a> (<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>)'
   })
 };
 
@@ -4282,6 +4423,15 @@ function _createLayer(cfg, token, isOverlay) {
     }
     case 'wmts':
       return L.tileLayer(url, { attribution: credit, layerName: cfg.name, maxZoom: 21 });
+    /* Written only by the offline downloader: the saved copy of the AGEA orthophoto. It has to
+       come back as the same stacked layer, so it requests exactly the URLs that were saved. */
+    case 'agea_ortho':
+      return new _AgeaOrthoLayer({
+        // CC BY: the copy keeps the credit the licence asks for, not only its own name.
+        attribution: credit + ' &mdash; &copy; AGEA (CC BY 4.0)', layerName: cfg.name,
+        minZoom: cfg.minZoom != null ? cfg.minZoom : undefined,
+        maxZoom: cfg.maxZoom || 18, maxNativeZoom: cfg.maxZoom || 18
+      });
     /* Written only by the offline downloader (offline.js), never by "Add web map": a WMS
        saved for offline use is tiled, so it must come back as a tile layer that rebuilds
        the same BBOX URLs, not as the single-image overlay a user-added WMS becomes. */

@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='utf-8'?>
-<widget id="com.geotool.giscatasto" version="1.5.1"
+<widget id="com.geotool.giscatasto" version="1.5.2"
     xmlns="http://www.w3.org/ns/widgets"
     xmlns:cdv="http://cordova.apache.org/ns/1.0"
     xmlns:android="http://schemas.android.com/apk/res/android">
@@ -89,15 +89,18 @@
   <preference name="MixedContentAllowed" value="false" />
   <preference name="GeoLocationEnabled" value="true" />
   <preference name="AndroidInsecureFileModeEnabled" value="false" />
-  <!-- http, not https, and it is deliberate. The national orthophoto (PCN/AGEA) is HTTP-only:
-       its HTTPS endpoint 301-redirects to HTTP, WMS path included (re-verified 2026-08-03).
-       Leaflet loads tiles as images and the offline downloader with fetch(), both from the app
-       page — served from an https://localhost origin those are mixed content and the WebView
-       drops them silently: no error, no image. An http://localhost origin has no such rule.
+  <!-- http, not https, and it is deliberate. It was chosen (2026-08-03) for the 2012 PCN
+       orthophoto, which was HTTP-only: its HTTPS endpoint 301-redirected to HTTP. Leaflet loads
+       tiles as images and the offline downloader with fetch(), both from the app page — served
+       from an https://localhost origin those are mixed content and the WebView drops them
+       silently: no error, no image. An http://localhost origin has no such rule.
+       Since 2026-11-20 the bundled orthophoto is AGEA's, over HTTPS, so that reason is gone, and
+       the scheme stays anyway: switching it would change the origin (see the last line), and
+       offline copies of the 2012 orthophoto saved before the switch still request http URLs.
        What this does NOT weaken: localhost stays a secure context in Chromium, so geolocation,
        the service worker and crypto keep working; and cleartext towards the network is still
        gated per-domain by res/xml/network_security_config.xml, which denies every host except
-       the one PCN endpoint. That file is the real gate — this is only the page's own origin,
+       the PCN one (the cadastre wizard's administrative-boundaries WFS). That file is the real gate — this is only the page's own origin,
        answered by Cordova's asset loader without opening a socket.
        Changing this changes the origin, so localStorage/IndexedDB/Cache Storage start empty. -->
   <preference name="scheme" value="http" />

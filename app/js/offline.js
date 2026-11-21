@@ -23,10 +23,10 @@
   // policy forbids bulk downloading outright, OpenTopoMap is a smaller volunteer
   // server again, and Esri does not allow offline caching without a licence.
   //
-  // Consequence, accepted when the sources were chosen: out of the box there is
-  // nothing left to download offline. What restores the feature is preloading the
-  // regional services (AGEA orthophotos, CTR), which do permit caching — until
-  // then the downloader only offers basemaps the user has added themselves.
+  // Consequence, accepted when the sources were chosen: what is left to download out
+  // of the box are the sources whose terms permit caching — the AGEA orthophoto
+  // (agea_ortho, CC BY 4.0) and the regional technical maps — plus whatever basemap
+  // the user adds themselves.
   const OFFLINE_BLOCKED_HOSTS = [
     'stadiamaps.com',
     'tile.openstreetmap.org',      // OSMF tile usage policy: bulk downloading forbidden
@@ -50,7 +50,7 @@
   // Bundled sources whose terms were read and do allow local copies. Everything else on
   // offer is something the user added, whose terms we cannot know: rather than block more
   // hosts — which a mirror defeats anyway — the download asks the user to state it.
-  const VETTED_OFFLINE = ['pcn_ortho'];
+  const VETTED_OFFLINE = ['agea_ortho'];
   const _needsAck = mapId => VETTED_OFFLINE.indexOf(mapId) === -1;
   const TILE_CACHE_NAME = 'giscatasto-tiles-v1';        // volatile (browsing) cache
   const OFFLINE_PREFIX  = 'giscatasto-offline-';        // one dedicated cache per saved basemap
@@ -174,6 +174,20 @@
     }
   }
 
+  /* Every URL one tile position needs. One for any ordinary layer; the AGEA orthophoto stacks
+     one service per flight year (see _AgeaOrthoLayer in map.js), and offline it requests all
+     of them, so all of them have to be saved — only the first would leave holes along the
+     borders between flights. */
+  function _tileUrls(mapId, z, x, y) {
+    const entry = BASEMAPS[mapId];
+    if (entry && !entry._needsCreds && typeof entry.getTileUrls === 'function') {
+      const coords = L.point(x, y); coords.z = z;
+      try { return entry.getTileUrls(coords); } catch (_) { return []; }
+    }
+    const u = _tileUrl(mapId, z, x, y);
+    return u ? [u] : [];
+  }
+
   function _tileUrl(mapId, z, x, y) {
     const entry = BASEMAPS[mapId];
     if (!entry || entry._needsCreds) return null;
@@ -266,8 +280,9 @@
       const r = _range(bounds, z);
       for (let x = r.xMin; x <= r.xMax; x++) {
         for (let y = r.yMin; y <= r.yMax; y++) {
-          const url = _tileUrl(mapId, z, x, y);
-          if (url && !cachedSet.has(_normUrl(url))) pending.push(url);
+          _tileUrls(mapId, z, x, y).forEach(url => {
+            if (!cachedSet.has(_normUrl(url))) pending.push(url);
+          });
         }
       }
     }
@@ -393,8 +408,9 @@
         const r = _range(bounds, z);
         for (let x = r.xMin; x <= r.xMax && !_cancelled; x++) {
           for (let y = r.yMin; y <= r.yMax && !_cancelled; y++) {
-            const url = _tileUrl(mapId, z, x, y);
-            if (url && cachedSet.has(_normUrl(url))) found++;
+            // A position counts as present only when every URL it needs is.
+            const urls = _tileUrls(mapId, z, x, y);
+            if (urls.length && urls.every(u => cachedSet.has(_normUrl(u)))) found++;
             checked++;
             if (checked % SCAN_BATCH === 0) {
               _setProgress(checked, total, true, 'Scansione');
@@ -449,6 +465,21 @@
     const sourceEntry = BASEMAPS[sourceMapId];
     if (!sourceEntry || typeof sourceEntry.getTileUrl !== 'function') {
       toastMsg('Impossibile ricavare l’URL dei tile per questa mappa', 'error', undefined, 'sidebar'); return;
+    }
+
+    /* The AGEA orthophoto: the copy is the same stacked layer (map.js, _createLayer case
+       'agea_ortho'), so it asks for exactly the per-year URLs that were saved. */
+    if (sourceEntry._isAgeaOrtho) {
+      const acfg = { id, type: 'agea_ortho', url: sourceEntry._url, maxZoom: maxZoom,
+        name: 'Offline: ' + name, offline: true, tiles: tiles || 0 };
+      if (minZoom > 1) acfg.minZoom = minZoom;
+      try { BASEMAPS[id] = _createLayer(acfg, null, false); }
+      catch (e) { toastMsg('Errore: ' + e.message, 'error', undefined, 'sidebar'); return; }
+      customMapConfigs.push(acfg);
+      _autoSaveConfig();
+      _addBasemapUI(acfg);
+      _notifySW();
+      return;
     }
 
     /* WMS source: there is no {z}/{x}/{y} template to store, the URL is built per tile

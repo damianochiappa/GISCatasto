@@ -604,7 +604,12 @@ document.addEventListener('deviceready', () => {
    what made the loss look arbitrary rather than systematic. */
 function _restoreSavedBasemap() {
   try {
-    const savedId = localStorage.getItem('giscatasto_basemap');
+    /* A bundled basemap that was replaced keeps its users on the replacement instead of
+       dropping them back to the default: the 2012 PCN orthophoto (pcn_ortho) became the AGEA
+       2022–2024 one on 2026-11-20. switchBasemap below then saves the new id. */
+    const _REPLACED = { pcn_ortho: 'agea_ortho' };
+    const _raw = localStorage.getItem('giscatasto_basemap');
+    const savedId = _REPLACED[_raw] || _raw;
     /* Compared against the id that is actually current, not a hardcoded one. The literal
        here was 'osm', left behind when the default became 'osm_std': it skipped the restore
        for OpenTopoMap — a perfectly ordinary choice, whose id IS 'osm' — and never skipped

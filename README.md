@@ -5,7 +5,7 @@ arrivano dai servizi pubblici INSPIRE dell'Agenzia delle Entrate; le mappe che s
 disponibili senza connessione.
 
 > **App indipendente**: non è affiliata all'Agenzia delle Entrate, al Ministero dell'Ambiente e della
-> Sicurezza Energetica o alle Regioni, non li rappresenta e non è un canale ufficiale. I dati sono
+> Sicurezza Energetica, all'AGEA o alle Regioni, non li rappresenta e non è un canale ufficiale. I dati sono
 > letti al momento della richiesta dai loro servizi pubblici — indirizzi ufficiali in
 > [Fonti dei dati](https://damianochiappa.github.io/GISCatasto/#fonti-dei-dati) — e restano dei
 > rispettivi enti; quanto mostrato non ha valore certificativo.
@@ -86,7 +86,7 @@ Le altre librerie di terze parti sono MIT, BSD-2 o Apache-2.0: vedi [NOTICES](NO
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 I dati catastali sono dell'Agenzia delle Entrate; le mappe di base provengono da OpenStreetMap,
-OpenTopoMap, Esri e dal Geoportale Nazionale, ciascuna secondo le proprie condizioni.
+OpenTopoMap, Esri e dall'AGEA (ortofoto, CC BY 4.0), ciascuna secondo le proprie condizioni.
 
 ## Segnalazioni
 

@@ -5,10 +5,10 @@ permalink: /privacy/
 
 # Informativa privacy — GISCatasto
 
-**Ultimo aggiornamento:** 6 agosto 2026
+**Ultimo aggiornamento:** 20 novembre 2026
 
 GISCatasto è un'applicazione **indipendente**: non è affiliata all'Agenzia delle Entrate, al Ministero
-dell'Ambiente e della Sicurezza Energetica o alle Regioni, non li rappresenta e non è un canale
+dell'Ambiente e della Sicurezza Energetica, all'AGEA o alle Regioni, non li rappresenta e non è un canale
 ufficiale. Interroga i loro servizi pubblici come farebbe un browser; i dati restano dei rispettivi
 enti e quanto mostrato non ha valore certificativo. Le fonti ufficiali, con i link, sono in fondo a
 questa pagina e nell'app in Info → Fonti.
@@ -48,7 +48,8 @@ conservato dall'app né trasmesso ad altri.
 | Servizio | Quando | Cosa riceve |
 |---|---|---|
 | Agenzia delle Entrate — cartografia catastale | Consultazione di fogli e particelle | Area richiesta |
-| Geoportale Nazionale (PCN) | Cascata regione / provincia / comune; ortofoto nazionale come mappa di base | Filtri amministrativi e area richiesta |
+| Geoportale Nazionale (PCN) | Cascata regione / provincia / comune | Filtri amministrativi |
+| AGEA — Agenzia per le Erogazioni in Agricoltura | Ortofoto nazionale come mappa di base | Area richiesta |
 | OpenStreetMap, OpenTopoMap | Mappe di base | Area richiesta |
 | Esri ArcGIS Online | Mappa satellitare e servizi ArcGIS | Area richiesta |
 | Nominatim (OpenStreetMap) | Ricerca di un indirizzo | Il testo cercato |
@@ -62,10 +63,9 @@ proprie condizioni, che non sono sotto il controllo di questa applicazione.
 
 Le richieste viaggiano cifrate (HTTPS) verso tutti questi servizi tranne uno: il Geoportale
 Nazionale, che pubblica i propri servizi solo in chiaro (il suo indirizzo HTTPS rimanda a HTTP). Le
-richieste dirette a quel servizio — i filtri amministrativi del wizard catastale e, se scegli
-l'ortofoto nazionale come mappa di base, l'area inquadrata — sono quindi leggibili lungo il percorso.
-Non contengono la tua posizione, che a quel servizio non viene mai inviata. Se preferisci evitarlo,
-è sufficiente non usare l'ortofoto nazionale e non usare la ricerca guidata per comune.
+richieste dirette a quel servizio — i filtri amministrativi del wizard catastale — sono quindi
+leggibili lungo il percorso. Non contengono la tua posizione, che a quel servizio non viene mai
+inviata. Se preferisci evitarlo, è sufficiente non usare la ricerca guidata per comune.
 
 ## Credenziali di servizi protetti
 
@@ -84,6 +84,7 @@ I servizi qui sopra sono pubblicati dai rispettivi enti; questi sono i loro indi
 
 - Agenzia delle Entrate — [consultazione cartografia catastale (WMS/WFS INSPIRE)](https://www.agenziaentrate.gov.it/portale/it/web/guest/schede/fabbricatiterreni/consultazione-cartografia-catastale/servizio-consultazione-cartografia) · [Geoportale Cartografico Catastale](https://geoportale.cartografia.agenziaentrate.gov.it/)
 - [Geoportale Nazionale](https://gn.mase.gov.it/portale/) — Ministero dell'Ambiente e della Sicurezza Energetica
+- [AGEA — Geoportale](https://geoportale.agea.gov.it/) — Agenzia per le Erogazioni in Agricoltura
 - Geoportali regionali: [Friuli-Venezia Giulia](https://irdat.regione.fvg.it/) · [Lazio](https://geoportale.regione.lazio.it/) · [Liguria](https://geoportal.regione.liguria.it/) · [Puglia](https://pugliacon.regione.puglia.it/web/sit-puglia-sit) · [Sardegna](https://www.sardegnageoportale.it/) · [Sicilia](https://www.sitr.regione.sicilia.it/) · [Toscana](https://www.regione.toscana.it/-/geoscopio)
 - [OpenStreetMap](https://www.openstreetmap.org/copyright) · [OpenTopoMap](https://opentopomap.org/about) · [Esri](https://www.esri.com/en-us/legal/terms/full-master-agreement) · [Open-Meteo](https://open-meteo.com/)
 
