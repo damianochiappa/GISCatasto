@@ -746,7 +746,7 @@
             <div class="guide-section">
               <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>Catasto</h4>
               <div class="guide-item"><span class="guide-key">Precaricato</span><span class="guide-desc">Il catasto dell’Agenzia delle Entrate è caricato e attivo di serie: particelle e fogli del Catasto Terreni (WFS) più le etichette delle particelle, il Catasto Fabbricati e i confini provinciali (WMS). Particelle, fabbricati ed etichette compaiono man mano che zoomi; le province si vedono a scala ampia. Puoi spegnerli o rimuoverli dalla scheda Layer.</span></div>
-              <div class="guide-item"><span class="guide-key">Scheda Catasto</span><span class="guide-desc">Trova le particelle catastali scendendo per gradi: regione &rarr; provincia &rarr; comune. L’elenco dei fogli disponibili per quel comune arriva dal WFS INSPIRE dell’Agenzia delle Entrate. Scegli il foglio e, se vuoi, scrivi il numero di particella (separate da virgola per più di una; qui i caratteri jolly non sono ammessi &mdash; per quelli usa il filtro del layer Catasto Particelle), poi tocca “Vai”: la mappa zooma sulla particella, selezionata ed evidenziata, e mostra intorno quelle vicine per orientarti (il filtro usato per trovarla si azzera da solo una volta selezionata). Richiede la connessione; i confini amministrativi vengono dal WFS PCN minambiente.</span></div>
+              <div class="guide-item"><span class="guide-key">Scheda Catasto</span><span class="guide-desc">Trova le particelle catastali scendendo per gradi: regione &rarr; provincia &rarr; comune. L’elenco dei fogli disponibili per quel comune arriva dal WFS INSPIRE dell’Agenzia delle Entrate. Scegli il foglio e, se vuoi, scrivi il numero di particella (separate da virgola per più di una; qui i caratteri jolly non sono ammessi &mdash; per quelli usa il filtro del layer Catasto Particelle), poi tocca “Vai”: la mappa zooma sulla particella, selezionata ed evidenziata, e mostra intorno quelle vicine per orientarti (il filtro usato per trovarla si azzera da solo una volta selezionata). Regioni, province e comuni sono dentro l’app (dati ISTAT al 1° gennaio 2026); per fogli e particelle serve la connessione.</span></div>
               <div class="guide-item"><span class="guide-key">Reset</span><span class="guide-desc">Azzera il risultato della ricerca: deseleziona le particelle che aveva evidenziato e toglie il filtro catastale attivo, riportando il layer Catasto Particelle al suo comportamento normale (nessun filtro, solo la vista corrente). Dopo “Vai” le particelle intorno restano mostrate, quindi è questo il pulsante con cui lasci la selezione quando hai finito.</span></div>
               <div class="guide-item"><span class="guide-key">Filtro già attivo</span><span class="guide-desc">Se sul layer Catasto Particelle c’è già un filtro WFS impostato a mano (col pulsante &#9661; nell’elenco dei layer), la ricerca guidata lo sostituisce &mdash; un avviso te lo segnala quando succede.</span></div>
               <div class="guide-item"><span class="guide-key">Punti fiduciali</span><span class="guide-desc">I punti fiduciali non sono precaricati. Dove la Regione li pubblica via WFS &mdash; il Piemonte lo fa &mdash; aggiungi il servizio da “Aggiungi mappa web” e i punti diventano un layer interrogabile come gli altri. Altrove, importa un KML ricavato dal TAF, la tabella dei punti fiduciali pubblicata dall’Agenzia delle Entrate. In entrambi i casi il layer viene salvato e ripristinato al lancio successivo. Questi punti non hanno valore legale: un atto di aggiornamento catastale richiede le monografie ufficiali dell’AdE.</span></div>
@@ -1029,7 +1029,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.5.2</span></div>
+      <div class="about-row"><span class="lbl">Versione</span><span class="val" id="about-version">1.5.3</span></div>
       <div class="about-row"><span class="lbl">Autore</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">Licenza</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — software libero</a></span></div>
       <div class="about-row"><span class="lbl">Tecnologia</span><span class="val">Leaflet · Cordova · Android</span></div>
@@ -1060,14 +1060,14 @@
          keep a link on every public-sector row here. Links leave through allow-intent
          (allow-navigation is off), so they open in the system browser. -->
     <p class="credits-disclaimer">GISCatasto è un’app <strong>indipendente</strong>: non è affiliata all’Agenzia
-      delle Entrate, al Ministero dell’Ambiente e della Sicurezza Energetica, all’AGEA o alle Regioni, non li
+      delle Entrate, all’ISTAT, all’AGEA o alle Regioni, non li
       rappresenta e non è un canale ufficiale. I dati sono letti al momento della richiesta dai servizi
       pubblici elencati qui sotto e restano dei rispettivi enti; quanto mostrato non ha valore
       certificativo. Per visure ed estratti di mappa ufficiali rivolgiti all’Agenzia delle Entrate.</p>
     <div class="credits-section">
       <div class="credits-title">Fonti dei dati</div>
       <div class="credits-row"><span class="who">Agenzia delle Entrate</span><span class="what">Cartografia catastale (WMS/WFS INSPIRE) — dati pubblici, condizioni del servizio</span><a class="src" href="https://www.agenziaentrate.gov.it/portale/it/web/guest/schede/fabbricatiterreni/consultazione-cartografia-catastale/servizio-consultazione-cartografia" target="_blank" rel="noopener">agenziaentrate.gov.it — consultazione cartografia catastale</a><a class="src" href="https://geoportale.cartografia.agenziaentrate.gov.it/" target="_blank" rel="noopener">geoportale.cartografia.agenziaentrate.gov.it</a></div>
-      <div class="credits-row"><span class="who">Geoportale Nazionale (PCN)</span><span class="what">Limiti amministrativi — Ministero dell’Ambiente e della Sicurezza Energetica, dati pubblici</span><a class="src" href="https://gn.mase.gov.it/portale/" target="_blank" rel="noopener">gn.mase.gov.it</a></div>
+      <div class="credits-row"><span class="who">ISTAT</span><span class="what">Nomi, codici ed estensioni di regioni, province e comuni al 1° gennaio 2026, elaborati dai confini amministrativi — CC BY 4.0</span><a class="src" href="https://www.istat.it/classificazione/confini-delle-unita-amministrative-a-fini-statistici/" target="_blank" rel="noopener">istat.it — confini amministrativi</a><a class="src" href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">creativecommons.org/licenses/by/4.0</a></div>
       <div class="credits-row"><span class="who">AGEA — Agenzia per le Erogazioni in Agricoltura</span><span class="what">Ortofoto nazionale 2022–2024 (WMTS) — CC BY 4.0</span><a class="src" href="https://geoportale.agea.gov.it/" target="_blank" rel="noopener">geoportale.agea.gov.it</a><a class="src" href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">creativecommons.org/licenses/by/4.0</a></div>
       <div class="credits-row"><span class="who">OpenStreetMap</span><span class="what">Mappa di base, ricerca indirizzi, percorsi — © contributori OpenStreetMap, ODbL</span><a class="src" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">openstreetmap.org/copyright</a></div>
       <div class="credits-row"><span class="who">OpenTopoMap</span><span class="what">Mappa topografica — CC BY-SA</span><a class="src" href="https://opentopomap.org/about" target="_blank" rel="noopener">opentopomap.org</a></div>
@@ -1541,6 +1541,7 @@ window.addEventListener('load', function nvCacheFullInit() {
 <script src="js/navigation.js"></script>
 <script src="js/compass.js"></script>
 <script src="js/offline.js"></script>
+<script src="js/admin-units.js"></script>
 <script src="js/cadaster-wizard.js"></script>
 
 

@@ -1860,18 +1860,18 @@ a.polyline-measure-controlOnBgColor:hover {
 }
 .guide-section h4 svg { width: 12px; height: 12px; opacity: .8; flex-shrink: 0; }
 .guide-item {
-  display: flex; gap: 8px; align-items: flex-start;
-  padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.04);
+  /* Name above the text: side by side, a long name squeezed the text into a narrow column. */
+  display: flex; flex-direction: column; gap: 4px; align-items: flex-start;
+  padding: 8px 0; border-bottom: 1px solid var(--border);
   font-size: 11px; line-height: 1.5;
 }
 .guide-item:last-child { border-bottom: none; }
 .guide-key {
   background: var(--surface3); border: 1px solid var(--border);
   border-radius: 4px; padding: 1px 6px; font-size: 10px; font-weight: 700;
-  color: var(--accent); white-space: nowrap; flex-shrink: 0; font-family: monospace;
-  min-width: 52px; text-align: center; margin-top: 1px;
+  color: var(--accent); max-width: 100%;
 }
-.guide-desc { color: var(--text-muted); flex: 1; }
+.guide-desc { color: var(--text-muted); width: 100%; overflow-wrap: anywhere; }
 
 /* ===== ONBOARDING ===== */
 #onboarding {

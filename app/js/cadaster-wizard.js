@@ -3,28 +3,21 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 /* Italian Cadaster Filter wizard (panel-cadaster).
-   - Cascade Region/Province/Comune from PCN minambiente WFS (UA.UNITAAMMINISTRATIVE.*).
+   - Cascade Region/Province/Comune from the bundled ISTAT list (js/admin-units.js).
    - Sheet (foglio) dropdown from Agenzia Entrate INSPIRE WFS (CP:CadastralZoning), bbox=comune.
    - Apply parcel filter to CP:CadastralParcel layer via _WFSLayer.setFilter.
    - All fetches are direct HTTP (not via _WFSLayer) so they bypass the layer's minZoom 14 guard.
-   - ISO-8859-1 decoding for PCN responses; EPSG:6706 coords treated as lat/lon for fitBounds
+   - EPSG:6706 coords treated as lat/lon for fitBounds
      (RDN2008 vs WGS84 differs by sub-meter — irrelevant at the zoom levels involved). */
 (function nvCadasterWizard() {
   'use strict';
 
-  // HTTP (not HTTPS): the PCN endpoint 301-redirects HTTPS to HTTP, and the native HTTP plugin
-  // refuses the downgrade. Mixed-content is allowed in config.xml; the native plugin bypasses
-  // the WebView's blocker anyway. Agenzia Entrate (CADASTER_WFS) serves HTTPS directly.
-  const ADMIN_WFS = 'http://wms.pcn.minambiente.it/ogc?map=/ms_ogc/wfs/LimitiAmministrativi_2020.map';
   const CADASTER_WFS = 'https://wfs.cartografia.agenziaentrate.gov.it/inspire/wfs/owfs01.php';
   const TIMEOUT_MS = 30000;
   const PARCEL_TYPENAME = 'CP:CadastralParcel';
   const ZONING_TYPENAME = 'CP:CadastralZoning';
 
   // Session-scoped caches (cleared on reload, never persisted).
-  const _regionsCache = { value: null };
-  const _provincesByRegion = {};
-  const _comuniByProvince = {};
   const _sheetsByComune = {};
 
   // Generation counter — increments on every applyCadasterFilter / resetCadasterFilter so
@@ -72,8 +65,7 @@
   }
 
   // Uses the same native HTTP path as _WFSLayer (cordova-plugin-advanced-http) so it bypasses
-  // WebView CORS/mixed-content/redirect restrictions that plain fetch() hits on hosts like
-  // wms.pcn.minambiente.it (which redirects HTTPS->HTTP). Falls back to fetch() outside Cordova.
+  // WebView CORS restrictions that plain fetch() hits. Falls back to fetch() outside Cordova.
   // Decoding goes through _decodeXmlBuffer (global from map.js) for consistent encoding handling.
   function fetchXml(url) {
     if (navigator.onLine === false) return Promise.reject(new Error('offline'));
@@ -170,127 +162,31 @@
     return (sh.label || '') + (sh.section ? ' \u2013 sez. ' + sh.section : '');
   }
 
-  // OGC Filter Encoding 1.1 — PropertyIsEqualTo, URL-encoded. PCN MapServer supports this
-  // server-side on cod_reg/cod_prov/pro_com (validated 2026-06-30). Avoids downloading the
-  // full national dataset and filtering client-side.
-  function filterEq(prop, val) {
-    return encodeURIComponent(
-      '<Filter xmlns="http://www.opengis.net/ogc"><PropertyIsEqualTo>' +
-      '<PropertyName>' + prop + '</PropertyName><Literal>' + val + '</Literal>' +
-      '</PropertyIsEqualTo></Filter>'
-    );
+  /* ===== Administrative units (bundled, js/admin-units.js) ===== */
+
+  /* Region / province / comune and the comune extents ship with the app: no server is asked, and
+     the lists are the same offline. Trentino-Alto Adige is left out by the generator: it runs its
+     own land registry (sistema tavolare), so the Agenzia delle Entrate service holds no data for
+     it. Promises are kept so that callers have one error path. */
+  function adminUnits() {
+    if (!window.GC_ADMIN_UNITS) throw new Error('admin-units.js not loaded');
+    return window.GC_ADMIN_UNITS;
   }
 
-  /* ===== Admin WFS (PCN minambiente) ===== */
-
-  /* Trento and Bolzano run their own provincial land registry (sistema tavolare), so the
-     Agenzia delle Entrate services this wizard queries hold no data for them. They are the
-     only two provinces of ISTAT region 4, so dropping the whole region drops exactly them:
-     offering it would produce an empty comune list and look like a broken service.
-     Filtered on the code, not the name — den_reg spelling varies between PCN datasets. */
-  const _EXCLUDED_REGION_CODES = { '4': 1 };   // Trentino-Alto Adige
-
   async function loadRegions() {
-    if (_regionsCache.value) return _regionsCache.value;
-    setStatus('Caricamento regioni\u2026');
-    const url = ADMIN_WFS + '&service=WFS&version=1.1.0&request=GetFeature' +
-      '&typeName=UA.UNITAAMMINISTRATIVE.REGIONI&propertyName=cod_reg,den_reg';
-    const doc = await fetchXml(url);
-    const feats = doc.getElementsByTagNameNS('*', 'UA.UNITAAMMINISTRATIVE.REGIONI');
-    const seen = {};
-    const out = [];
-    for (let i = 0; i < feats.length; i++) {
-      const name = textOf(feats[i], 'den_reg');
-      const code = textOf(feats[i], 'cod_reg');
-      if (!name || !code || seen[code] || _EXCLUDED_REGION_CODES[code]) continue;
-      seen[code] = 1;
-      out.push({ name, code });
-    }
-    out.sort((a, b) => a.name.localeCompare(b.name));
-    _regionsCache.value = out;
     setStatus('');
-    return out;
+    return adminUnits().regions.map(r => ({ code: r[0], name: r[1] }));
   }
 
   async function loadProvinces(regionCode) {
-    if (_provincesByRegion[regionCode]) return _provincesByRegion[regionCode];
-    setStatus('Caricamento province\u2026');
-    const url = ADMIN_WFS + '&service=WFS&version=1.1.0&request=GetFeature' +
-      '&typeName=UA.UNITAAMMINISTRATIVE.PROVINCE' +
-      '&propertyName=cod_prov,den_prov,cod_uts,den_uts,cod_reg' +
-      '&filter=' + filterEq('cod_reg', regionCode);
-    const doc = await fetchXml(url);
-    const feats = doc.getElementsByTagNameNS('*', 'UA.UNITAAMMINISTRATIVE.PROVINCE');
-    const seen = {};
-    const out = [];
-    for (let i = 0; i < feats.length; i++) {
-      // Città metropolitane: PCN sets den_prov='-' (literal hyphen placeholder) and the real
-      // name lives in den_uts. Treat '-' as empty so we fall through to den_uts.
-      const denProv = textOf(feats[i], 'den_prov');
-      const denUts  = textOf(feats[i], 'den_uts');
-      const name = (denProv && denProv !== '-') ? denProv : denUts;
-      const code = textOf(feats[i], 'cod_prov') || textOf(feats[i], 'cod_uts');
-      if (!name || !code || seen[code]) continue;
-      seen[code] = 1;
-      out.push({ name, code });
-    }
-    out.sort((a, b) => a.name.localeCompare(b.name));
-    _provincesByRegion[regionCode] = out;
     setStatus('');
-    return out;
+    return (adminUnits().provinces[regionCode] || []).map(p => ({ code: p[0], name: p[1] }));
   }
 
   async function loadComuni(provinceCode) {
-    if (_comuniByProvince[provinceCode]) return _comuniByProvince[provinceCode];
-    setStatus('Caricamento comuni\u2026');
-    // No geometry here — bbox fetched on-demand at pick via loadComuneBbox.
-    const url = ADMIN_WFS + '&service=WFS&version=1.1.0&request=GetFeature' +
-      '&typeName=UA.UNITAAMMINISTRATIVE.COMUNI' +
-      '&propertyName=comune,pro_com,sigla,cod_prov,cod_uts,cod_reg' +
-      '&filter=' + filterEq('cod_prov', provinceCode);
-    const doc = await fetchXml(url);
-    const feats = doc.getElementsByTagNameNS('*', 'UA.UNITAAMMINISTRATIVE.COMUNI');
-    const seen = {};
-    const out = [];
-    for (let i = 0; i < feats.length; i++) {
-      const name = textOf(feats[i], 'comune');
-      const code = textOf(feats[i], 'pro_com');
-      if (!name || !code || seen[code]) continue;
-      seen[code] = 1;
-      out.push({ name, code });
-    }
-    out.sort((a, b) => a.name.localeCompare(b.name));
-    _comuniByProvince[provinceCode] = out;
     setStatus('');
-    return out;
-  }
-
-  // Single-feature query that includes geometry, used at pick time to derive bbox for the
-  // sheet query. Mutates and returns the comune.bbox so callers can chain.
-  async function loadComuneBbox(comune) {
-    if (comune.bbox) return comune.bbox;
-    setStatus('Caricamento estensione di ' + comune.name + '\u2026');
-    const url = ADMIN_WFS + '&service=WFS&version=1.1.0&request=GetFeature' +
-      '&typeName=UA.UNITAAMMINISTRATIVE.COMUNI' +
-      '&filter=' + filterEq('pro_com', comune.code);
-    const doc = await fetchXml(url);
-    const feats = doc.getElementsByTagNameNS('*', 'UA.UNITAAMMINISTRATIVE.COMUNI');
-    let combined = null;
-    for (let i = 0; i < feats.length; i++) {
-      const bb = bboxFromFeature(feats[i], true);
-      if (!bb) continue;
-      if (!combined) combined = bb.slice();
-      else {
-        combined[0] = Math.min(combined[0], bb[0]);
-        combined[1] = Math.min(combined[1], bb[1]);
-        combined[2] = Math.max(combined[2], bb[2]);
-        combined[3] = Math.max(combined[3], bb[3]);
-      }
-    }
-    if (!combined) throw new Error('no geometry for comune ' + comune.code);
-    comune.bbox = combined;
-    setStatus('');
-    return combined;
+    return (adminUnits().comuni[provinceCode] || []).map(c =>
+      ({ code: c[0], name: c[1], cadCode: c[2], bbox: c.slice(3, 7) }));
   }
 
   /* ===== Cadaster WFS (Agenzia Entrate) ===== */
@@ -454,7 +350,9 @@
         if (ca !== cb) return (cb ? 1 : 0) - (ca ? 1 : 0); // tie-break: zone over comune centre
         return a.localeCompare(b);                         // deterministic final tie-break
       });
-      targetAU = auCodes[0];
+      /* The bundled cadastral code names the comune exactly. A merged comune whose maps still carry
+         the old codes is not in the answer under its new one: the guess above stays for that. */
+      targetAU = byAU[comune.cadCode] ? comune.cadCode : auCodes[0];
     }
 
     // One entry per sheet REFERENCE, not per label. A comune split into cadastral sections
@@ -924,10 +822,9 @@
 
     /* Reset clears the whole selection, not just the parcel field: leaving region /
        province / comune / foglio filled after the filter is gone showed a query that
-       is no longer applied to anything. The region list itself is kept — it is fetched
-       once on first activation of the tab and refetching it would be a pointless
-       round-trip — only the choice is dropped. */
+       is no longer applied to anything. The region list itself is kept; only the choice is dropped. */
     function resetWizardForm() {
+      _sheetGen++;
       regionSel.value = '';
       provSel.innerHTML  = '<option value="">Scegli prima la regione\u2026</option>';
       comSel.innerHTML   = '<option value="">Scegli prima la provincia\u2026</option>';
@@ -939,14 +836,19 @@
       updateGoEnabled();
     }
 
+    // Bumped by every choice above the foglio and by Reset: a sheet list that answers after one
+    // belongs to a comune no longer selected and must not fill the dropdown.
+    let _sheetGen = 0;
+
     function onComuneChosen(c) {
+      const gen = ++_sheetGen;
       _selectedSheet = null;
       sheetSel.disabled = true;
       sheetSel.innerHTML = '<option value="">Caricamento\u2026</option>';
       resetBtn.disabled = true;
       updateGoEnabled();
-      const ensureBbox = c.bbox ? Promise.resolve() : loadComuneBbox(c);
-      ensureBbox.then(() => loadSheets(c)).then(list => {
+      loadSheets(c).then(list => {
+        if (gen !== _sheetGen) return;
         _sheets = list;
         if (list.incomplete && !list.length) {
           sheetSel.innerHTML = '<option value="">Errore</option>';
@@ -967,15 +869,17 @@
         }
         fillSelect(sheetSel, list, sh => 'Foglio ' + sheetText(sh), 'Scegli il foglio\u2026');
       }).catch(err => {
+        if (gen !== _sheetGen) return;
         sheetSel.innerHTML = '<option value="">Errore</option>';
         sheetSel.disabled = true;
         reportError(err, 'Errore nel caricamento dei fogli');
       }).finally(() => {
-        resetBtn.disabled = false;
+        if (gen === _sheetGen) resetBtn.disabled = false;
       });
     }
 
     regionSel.addEventListener('change', () => {
+      _sheetGen++; resetBtn.disabled = false;
       const i = parseInt(regionSel.value, 10);
       provSel.disabled = true; provSel.innerHTML = '<option value="">Caricamento\u2026</option>';
       comSel.disabled = true; comSel.innerHTML = '<option value="">Scegli prima la provincia\u2026</option>';
@@ -993,6 +897,7 @@
     });
 
     provSel.addEventListener('change', () => {
+      _sheetGen++; resetBtn.disabled = false;
       const i = parseInt(provSel.value, 10);
       comSel.disabled = true; comSel.innerHTML = '<option value="">Caricamento\u2026</option>';
       sheetSel.disabled = true; sheetSel.innerHTML = '<option value="">Scegli prima il comune\u2026</option>';

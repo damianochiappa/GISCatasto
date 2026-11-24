@@ -4,8 +4,8 @@ App Android per consultare la cartografia catastale italiana sul campo. Le parti
 arrivano dai servizi pubblici INSPIRE dell'Agenzia delle Entrate; le mappe che scarichi restano
 disponibili senza connessione.
 
-> **App indipendente**: non è affiliata all'Agenzia delle Entrate, al Ministero dell'Ambiente e della
-> Sicurezza Energetica, all'AGEA o alle Regioni, non li rappresenta e non è un canale ufficiale. I dati sono
+> **App indipendente**: non è affiliata all'Agenzia delle Entrate, all'ISTAT,
+> all'AGEA o alle Regioni, non li rappresenta e non è un canale ufficiale. I dati sono
 > letti al momento della richiesta dai loro servizi pubblici — indirizzi ufficiali in
 > [Fonti dei dati](https://damianochiappa.github.io/GISCatasto/#fonti-dei-dati) — e restano dei
 > rispettivi enti; quanto mostrato non ha valore certificativo.

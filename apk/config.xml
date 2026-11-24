@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='utf-8'?>
-<widget id="com.geotool.giscatasto" version="1.5.2"
+<widget id="com.geotool.giscatasto" version="1.5.3"
     xmlns="http://www.w3.org/ns/widgets"
     xmlns:cdv="http://cordova.apache.org/ns/1.0"
     xmlns:android="http://schemas.android.com/apk/res/android">
@@ -42,7 +42,8 @@
          (erano gia' limitati a maxSdkVersion 32 e 29) e Play li segnala come permessi
          sensibili dichiarati senza motivo. L'app scrive tramite SAF/cordova-plugin-file
          nella sua area, che non richiede permessi. -->
-    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+    <!-- GPS non obbligatorio: lo decide GPS_REQUIRED=false del plugin geolocation in
+         build_giscatasto.sh; un uses-feature scritto qui non viene copiato da Cordova. -->
 
     <!-- Icona default (fallback): usata sotto API 26, dove nessuna maschera viene
          applicata e la placca squircle disegnata nel bitmap e' la resa corretta. -->
